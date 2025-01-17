@@ -1,0 +1,26 @@
+  COPY
+
+***<IHM_COPY>
+      COPY        20
+      COPY        30
+      COPY        40
+      COPY        50
+      COPY        60
+      COPY        70
+      COPY        80
+      COPY       130
+      COPY       200
+      COPY       210
+      COPY       220
+      COPY       230
+      COPY       320
+      COPY       330
+      COPY       340
+      COPY       350
+      COPY       360
+      COPY       370
+      COPY       380
+      COPY       430
+***</IHM_COPY>
+
+  END COPY

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<BCPFORMAT xmlns="http://schemas.microsoft.com/sqlserver/2004/bulkload/format" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <RECORD>
+  <FIELD ID="1" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="10"/>
+  <FIELD ID="2" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="5"/>
+  <FIELD ID="3" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="2"/>
+  <FIELD ID="4" xsi:type="CharTerm" TERMINATOR="\r\n" MAX_LENGTH="25"/>
+</RECORD>
+ <ROW>
+  <COLUMN SOURCE="1"  NAME="Date" xsi:type="SQLDATETIME"/>
+  <COLUMN SOURCE="2"  NAME="CellID" xsi:type="SQLINT"/>
+  <COLUMN SOURCE="3"  NAME="LayerNumber" xsi:type="SQLINT"/>
+  <COLUMN SOURCE="4"  NAME="Head" xsi:type="SQLFLT4"/>
+ </ROW>
+</BCPFORMAT>

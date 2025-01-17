@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<BCPFORMAT xmlns="http://schemas.microsoft.com/sqlserver/2004/bulkload/format" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <RECORD>
+  <FIELD ID="1" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="10"/>
+  <FIELD ID="2" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="5"/>
+  <FIELD ID="3" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="4" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="5" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="6" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="7" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="8" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="9" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="10" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="11" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="12" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="13" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="14" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="15" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="16" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="17" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="18" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="19" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="20" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="21" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="22" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="23" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="24" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="25" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="26" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="27" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="28" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="29" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="30" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="31" xsi:type="CharTerm" TERMINATOR="\r\n" MAX_LENGTH="25"/>
+</RECORD>
+ <ROW>
+  <COLUMN SOURCE="1"   NAME="Date         " xsi:type="SQLDATETIME"/>
+  <COLUMN SOURCE="2"   NAME="LandSegmentID" xsi:type="SQLINT"/>
+  <COLUMN SOURCE="3"   NAME="AGWI         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="4"   NAME="AGWO         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="5"   NAME="IGWI         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="6"   NAME="PET          " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="7"   NAME="TAET         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="8"   NAME="LZS          " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="9"   NAME="PERS         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="10"  NAME="CEPS         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="11"  NAME="SURS         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="12"  NAME="UZS          " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="13"  NAME="IFWS         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="14"  NAME="AGWS         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="15"  NAME="GWVS         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="16"  NAME="SUPY         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="17"  NAME="SURO         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="18"  NAME="IFWO         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="19"  NAME="PERO         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="20"  NAME="CEPE         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="21"  NAME="UZET         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="22"  NAME="LZET         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="23"  NAME="AGWET        " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="24"  NAME="BASET        " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="25"  NAME="IFWI         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="26"  NAME="UZI          " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="27"  NAME="INFIL        " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="28"  NAME="PERC         " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="29"  NAME="LZI          " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="30"  NAME="SURLI        " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="31"  NAME="IRRAPP6      " xsi:type="SQLFLT4"/>
+ </ROW>
+</BCPFORMAT>

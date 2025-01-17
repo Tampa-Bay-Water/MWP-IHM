@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<BCPFORMAT xmlns="http://schemas.microsoft.com/sqlserver/2004/bulkload/format" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <RECORD>
+  <FIELD ID="1" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="10"/>
+  <FIELD ID="2" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="5"/>
+  <FIELD ID="3" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="4" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="5" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="6" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="7" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="8" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="9" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="10" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="11" xsi:type="CharTerm" TERMINATOR="," MAX_LENGTH="25"/>
+  <FIELD ID="12" xsi:type="CharTerm" TERMINATOR="\r\n" MAX_LENGTH="25"/>
+</RECORD>
+ <ROW>
+  <COLUMN SOURCE="1"   NAME="RivercellID          " xsi:type="SQLINT"/>
+  <COLUMN SOURCE="2"   NAME="TimestepsCompleted   " xsi:type="SQLINT"/>
+  <COLUMN SOURCE="3"   NAME="TimestepsWithNegativeBaseflow  " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="4"   NAME="MinimumBaseflow      " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="5"   NAME="MaximumBaseflow      " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="6"   NAME="AverageNegativeBaseflow  " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="7"   NAME="AveragePositiveBaseflow  " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="8"   NAME="TimestepsWithStageAboveTopo     " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="9"   NAME="MinimumDepthToStage  " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="10"   NAME="MaximumDepthToStage " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="11"   NAME="AverageNegativeDepthToStage    " xsi:type="SQLFLT4"/>
+  <COLUMN SOURCE="12"  NAME="AveragePositiveDepthToStage     " xsi:type="SQLFLT4"/>
+ </ROW>
+</BCPFORMAT>
