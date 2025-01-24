@@ -25,7 +25,9 @@ def plot_MP(w,lowh,rh,need_weekly=False,q=None,sema=None):
         print(f"No data for '{w}'!")
         return None
 
-    fig = [plot_hydrograph(df,Target)]+[plotRegression1(df,Target)]+[plotHist(df,Target)]
+    fig = [plot_hydrograph(df,Target)] \
+        + [plotRegression1(df,Target)] \
+        + [plotHist(df,Target)]
     if sema is not None:
         sema.release()
 
@@ -204,7 +206,7 @@ def plotRegression1(df,Target):
     if len(x_ver)>3:
         g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
     g.set_axis_labels("Simulated WL, ft NGVD", "Observed WL, ft NGVD")
-    g.ax_joint.plot((plt.gca().get_xlim()), [Target, Target], color='green', linewidth=1, linestyle="--")
+    g.ax_joint.plot(xlim, [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
@@ -256,17 +258,19 @@ def plot_hydrograph(df,Target):
     if len(df)==0:
         print(f"No data for '{w}'!")
         return None
+    fig = plt.figure(figsize=(13, 9))
+    sns.set_theme(style="darkgrid")
     
     temp = df.iloc[[0,-1],:].copy()
     temp[w] = Target
     temp.DataOrigin = 'Target'
     df = pd.concat([df,temp])
 
-    fig = plt.figure(figsize=(13, 9))
     sns.scatterplot(data=df, x='Date', y=w, markers=False, s=0)
     sns.lineplot(data=df, x='Date', y=w, hue='DataOrigin',
         style='DataOrigin', dashes=[(1,0),(1,0),(3,1)])
 
+    plt.grid(True, color='lightgray')
     plt.ylabel("Waterlevel, ft NGVD")
     plt.title(w)
     plt.tight_layout()
@@ -406,6 +410,7 @@ if __name__ == '__main__':
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
         wnames = ['A-1s','MB-24s']
+        wnames = ['CYB-WT-5-1950','MB-24s']
     else:
         use_mp = 'useMP_Queue'
 

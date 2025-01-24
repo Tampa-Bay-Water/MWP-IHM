@@ -24,7 +24,9 @@ def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
         print(f"No data for FlowStationID = '{id}'!")
         return None
 
-    fig = [plotRegression1(df,gf.FlowStationInfo)]+[plotHist(df,gf.FlowStationInfo)]
+    fig = [plot_hydrograph(df,gf.FlowStationInfo)] \
+        + [plotRegression1(df,gf.FlowStationInfo)] \
+        + [plotHist(df,gf.FlowStationInfo)]
     if sema is not None:
         sema.release()
 
@@ -342,6 +344,33 @@ def plotRegression1(df,FlowStationInfo):
 
     # plt.close()
     return [fig1, fig2]
+
+def plot_hydrograph(df,FlowStationInfo):
+    w = df.columns.tolist()[0]
+    id = int(w.replace('ID_',''))
+    staname = FlowStationInfo.loc[FlowStationInfo.FlowStationID==id,'StationName'].values[0]
+    if len(df)==0:
+        print(f"No data for flow gage: '{staname}'!")
+        return None
+
+    fig = plt.figure(figsize=(13, 9))
+    sns.set_theme(style="darkgrid")
+
+    sns.scatterplot(data=df, x='Date', y=w, markers=False, s=0)
+    sns.lineplot(data=df, x='Date', y=w, hue='DataOrigin',
+        style='DataOrigin', dashes=[(1,0),(1,0)])
+
+    plt.yscale('log')
+    plt.grid(True, color='lightgray')
+    plt.ylabel("Streamflow, cfs")
+    plt.title(staname)
+    plt.tight_layout()
+
+    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hydrograph')
+    fig.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
+
+    return fig
 
 def get1WideTable(id,gf,need_weekly):
     # Wide format table
