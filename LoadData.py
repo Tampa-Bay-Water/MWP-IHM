@@ -13,6 +13,7 @@ import re
 is_Windows = os.name=='nt'
 owinfo_sql = f'''
     SELECT PointID,A.PointName,WFCode,CTSID,SiteID,INTB_OWID,[Name],A.CellID,LayerNumber,Target
+        , NewLandElevation-Topo SurfEl2CellTopoOffset
     FROM (
         SELECT PointID,PointName,'OROP CP' PermitType,WFCode,CTSID,SiteID,CellID,INTB_OWID
         FROM [MWP_CWF].[dbo].[OROP_SASwells]
@@ -31,6 +32,7 @@ owinfo_sql = f'''
         SELECT PointName,MinAvg Target
         FRoM [MWP_CWF].[dbo].[swimalWL]
     ) C ON A.PointName=C.PointName
+    INNER JOIN [INTB2_Input].[dbo].[Cell] B on B.CellID=A.CellID
     WHERE INTB_OWID IS NOT NULL
     ORDER BY WFCode,PointName
 '''

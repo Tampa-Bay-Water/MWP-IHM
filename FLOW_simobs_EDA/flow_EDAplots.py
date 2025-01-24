@@ -9,7 +9,10 @@ import seaborn as sns
 import LoadData as ld
 from LoadData import GetFlow
 
+IS_DEBUGGING = False
+FILE_REGRESSION_PARAMS = r"flow_regression_params.csv"
 MAX_NUM_PROCESSES = 10
+FIG_TITLE_FONTSIZE = 12
 TITLE_FONTSIZE = 10
 AX_LABEL_FONTSIZE = 8
 
@@ -220,13 +223,13 @@ def plotRegression1(df,FlowStationInfo):
 
     # single period
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Observed", y="Simulated", height=8)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", height=8)
     g.plot_joint(sns.kdeplot, fill=True, levels=6)
-    g.plot_joint(sns.regplot, robust=True, ci=90, 
+    g.plot_joint(sns.regplot, robust=True, ci=90,
         line_kws={"color":"red"},
         scatter_kws={"edgecolor": "white","linewidths": 0.25,"s": 40})
     g.plot_marginals(sns.histplot, kde=True)
-    g.set_axis_labels("Observed Flow, cfs", "Simulated Flow, cfs")
+    g.set_axis_labels("Simulated Flow, cfs", "Observed Flow, cfs")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')
@@ -242,6 +245,8 @@ def plotRegression1(df,FlowStationInfo):
     g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
     g.ax_joint.minorticks_on()
     g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
+    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
 
     # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
     # g.ax_joint.set_xscale("log")
@@ -253,18 +258,21 @@ def plotRegression1(df,FlowStationInfo):
 
     # two periods - validation and Others periods
     # use robust regression to predict separate period
-    y_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Simulated'),w]
-    y_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Simulated'),w]
-    x_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Observed' ),w]
-    x_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Observed' ),w]
+    x_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Simulated'),w]
+    x_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Simulated'),w]
+    y_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Observed' ),w]
+    y_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Observed' ),w]
     if len(x_cal)>3:
-        _,yp_cal = regRobust(x_cal,y_cal)
+        cal_model,yp_cal = regRobust(x_cal,y_cal)
+        cal_intercept = cal_model.params['const']
+        cal_slope = cal_model.params[w]
     if len(x_ver)>3:
-        _,yp_ver = regRobust(x_ver,y_ver)
-
+        ver_model,yp_ver = regRobust(x_ver,y_ver)
+        ver_intercept = ver_model.params['const']
+        ver_slope = ver_model.params[w]
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Observed", y="Simulated", hue="ModelPeriod", height=8)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", hue="ModelPeriod", height=8)
     g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
@@ -272,7 +280,7 @@ def plotRegression1(df,FlowStationInfo):
         g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
     if len(x_ver)>3:
         g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
-    g.set_axis_labels("Observed Flow, cfs", "Simulated Flow, cfs")
+    g.set_axis_labels("Simulated Flow, cfs", "Observed Flow, cfs")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')
@@ -292,10 +300,41 @@ def plotRegression1(df,FlowStationInfo):
     # g.ax_joint.set_yscale("log")
     # g.ax_marg_x.set_xscale('log')
     # g.ax_marg_y.set_yscale('log')
+    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+    sns.move_legend(g.ax_joint, 'lower right')
+    xlim = g.ax_joint.get_xlim()
+    text_left = xlim[0] + (xlim[1]-xlim[0])/40
+    text_top  = g.ax_joint.get_ylim()[1] 
+    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    if len(x_cal)>3:
+        if len(x_ver)>3:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + "\nCalibration: "+r"$\log_{10}(y)$"+f" = {cal_intercept:.3f} + {cal_slope:.3f} "+r"$\log_{10}(x)$"
+                + "\n     Others: "+r"$\log_{10}(y)$"+f" = {ver_intercept:.3f} + {ver_slope:.3f} "+r"$\log_{10}(x)$"
+                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
+            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+                f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept}\n')
+        else:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + "\nCalibration: "+r"$\log_{10}(y)$"+f" = {cal_intercept:.3f} + {cal_slope:.3f} "+r"$\log_{10}(x)$"
+                , fontsize=TITLE_FONTSIZE, va='top')
+            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+                f.write(f'{id},{cal_slope},{cal_intercept},,\n')
+    if len(x_ver)>3:
+        if len(x_ver)<=3:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + "\nOthers: "+r"$\log_{10}(y)$"+f" = {ver_intercept:.3f} + {ver_slope:.3f} "+r"$\log_{10}(x)$"
+                , fontsize=TITLE_FONTSIZE, va='top')
+            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+                f.write(f'{id},,,{ver_slope},{ver_intercept}\n')
+
     fig2 = plt.gcf()
     fig2.tight_layout()
 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress1')
     fig1.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress2')
@@ -369,9 +408,9 @@ def useMP_Pool():
     with mp.Pool(processes=5) as pool:
         for id in flowIDs:
             p = pool.apply_async(plot_MP,args=(id,gf,need_weekly))
-            print(f"Return type from apply_async is '{type(p)}'.")
+            # print(f"Return type from apply_async is '{type(p)}'.")
             r= p.get(timeout=60)
-            print(f"Return type from get is '{type(r)}'.")
+            # print(f"Return type from get is '{type(r)}'.")
             rtnval += r
 
     return rtnval
@@ -386,8 +425,6 @@ def use_noMP():
 if __name__ == '__main__':
     # from memory_profiler import memory_usage
     need_weekly = True
-    use_degug = False
-    # use_degug = False
     sns.set_theme(style="darkgrid")
     plt.rcParams.update({'font.size': 8}) 
     if ld.is_Windows:
@@ -401,8 +438,10 @@ if __name__ == '__main__':
     flowinfo = gf.FlowStationInfo
     # flowinfo = flowinfo.iloc[flowinfo.UseInCalibration==True,:]
     flowIDs = flowinfo.FlowStationID.to_list()
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
+        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept\n") 
 
-    if use_degug:
+    if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
         flowIDs = [
@@ -425,7 +464,7 @@ if __name__ == '__main__':
 
     etime = datetime.now()-start_time
     print(f'Elasped time: {etime}')
-    if use_degug:
+    if IS_DEBUGGING:
         plt.show()
 
     # print('Memory usage (in chunks of .1 seconds): %s' % mem_usage)

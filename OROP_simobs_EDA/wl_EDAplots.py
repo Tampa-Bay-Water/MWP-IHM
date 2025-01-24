@@ -9,6 +9,13 @@ import seaborn as sns
 import LoadData as ld
 from LoadData import ReadHead, LoadObservedHead
 
+IS_DEBUGGING = False
+FILE_REGRESSION_PARAMS = r"wl_regression_params.csv"
+MAX_NUM_PROCESSES = 10
+FIG_TITLE_FONTSIZE = 12
+TITLE_FONTSIZE = 10
+AX_LABEL_FONTSIZE = 8
+
 def plot_MP(w,lowh,rh,need_weekly=False,q=None,sema=None):
     print(f"starting histogram plot '{w}'")
     df,Target = get1WideTable(w,lowh,rh,need_weekly)
@@ -18,7 +25,7 @@ def plot_MP(w,lowh,rh,need_weekly=False,q=None,sema=None):
         print(f"No data for '{w}'!")
         return None
 
-    fig = [plotRegression1(df,Target)]+[plotHist(df,Target)]
+    fig = [plot_hydrograph(df,Target)]+[plotRegression1(df,Target)]+[plotHist(df,Target)]
     if sema is not None:
         sema.release()
 
@@ -41,7 +48,7 @@ def plotHist(df,Target):
 
     sns.histplot(data=df, x=w, hue="DataOrigin", element="step", kde=True, ax=axes[1])
     axes[1].set_title(f"Compare Histograms of '{w}'")
-    axes[2].set_ylabel("Count", fontsize=8)
+    axes[2].set_ylabel("Count", fontsize=AX_LABEL_FONTSIZE)
     
     temp = df.iloc[range(len(df))]
     temp[w] = Target
@@ -51,7 +58,7 @@ def plotHist(df,Target):
     # sns.lineplot(x=[Target,Target], y=[0,1], ax=axes[2],
     #     linestyle='--', color='black', linewidth=1) #, label='Target')
     axes[2].set_title(f"Compare CDF of '{w}'")
-    axes[2].set_ylabel("Probability", fontsize=8)
+    axes[2].set_ylabel("Probability", fontsize=AX_LABEL_FONTSIZE)
 
     sns.boxplot(data=df, x=w, hue="DataOrigin", ax=axes[3])
     for patch in axes[3].patches:
@@ -62,12 +69,12 @@ def plotHist(df,Target):
 
     sns.violinplot(data=df, x=w, hue="DataOrigin", ax=axes[4], split=True, inner="quart", fill=False)
     axes[4].set_title(f"Violin Plot of Histograms for '{w}'")
-    axes[4].set_ylabel("Probability", fontsize=8)
+    axes[4].set_ylabel("Probability", fontsize=AX_LABEL_FONTSIZE)
 
     for k in range(1,5):
         axes[k].grid(color='lightgray')
-        axes[k].set_xlabel("Waterlevel ft NGVD", fontsize=8)
-        axes[k].tick_params(axis='both', which='major', labelsize=8)
+        axes[k].set_xlabel("Waterlevel ft NGVD", fontsize=AX_LABEL_FONTSIZE)
+        axes[k].tick_params(axis='both', which='major', labelsize=AX_LABEL_FONTSIZE)
         legend = axes[k].get_legend()
         legend.get_title().set_fontsize(9)
         for text in legend.get_texts():
@@ -151,49 +158,91 @@ def plotRegression1(df,Target):
 
     # single period
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Observed", y="Simulated", height=8)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", height=AX_LABEL_FONTSIZE)
     g.plot_joint(sns.kdeplot, fill=True, levels=6)
     g.plot_joint(sns.regplot, robust=True, ci=90,
         line_kws={"color":"red"},
         scatter_kws={"edgecolor": "white","linewidths": 0.25,"s": 40})
     g.plot_marginals(sns.histplot, kde=True)
-    g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    g.set_axis_labels("Simulated WL, ft NGVD", "Observed WL, ft NGVD")
+    xlim = [round(min(df[w])/2.)*2-2, round(max(df[w])/2.)*2+2]
+    g.ax_joint.set_xlim(xlim[0],xlim[1])
+    g.ax_joint.plot(xlim, [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    
+    g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+
     fig1 = plt.gcf()
     fig1.tight_layout()
 
     # two periods - validation and verification periods
     # use robust regression to predict separate period
-    y_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Simulated'),w]
-    y_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Simulated'),w]
-    x_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Observed' ),w]
-    x_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Observed' ),w]
-    print(f"Robust Regression for '{w}'")
+    x_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Simulated'),w]
+    x_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Simulated'),w]
+    y_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Observed' ),w]
+    y_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Observed' ),w]
     if len(x_cal)>3:
-        _,yp_cal = regRobust(x_cal,y_cal)
+        cal_model,yp_cal = regRobust(x_cal,y_cal)
+        cal_intercept = cal_model.params['const']
+        cal_slope = cal_model.params[w]
     if len(x_ver)>3:
-        _,yp_ver = regRobust(x_ver,y_ver)
-
+        ver_model,yp_ver = regRobust(x_ver,y_ver)
+        ver_intercept = ver_model.params['const']
+        ver_slope = ver_model.params[w]
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Observed", y="Simulated", hue="ModelPeriod", height=8)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", hue="ModelPeriod", height=AX_LABEL_FONTSIZE)
     g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
+    g.ax_joint.set_xlim(xlim[0],xlim[1])
     if len(x_cal)>3:
         g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
     if len(x_ver)>3:
         g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
-    g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    g.set_axis_labels("Simulated WL, ft NGVD", "Observed WL, ft NGVD")
+    g.ax_joint.plot((plt.gca().get_xlim()), [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+    sns.move_legend(g.ax_joint, 'lower right')
+    # xlim = g.ax_joint.get_xlim()
+    text_left = xlim[0] + (xlim[1]-xlim[0])/40
+    text_top  = g.ax_joint.get_ylim()[1] 
+    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    if len(x_cal)>3:
+        if len(x_ver)>3:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
+                + f"\n      Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
+                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
+            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+                f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept}\n')
+        else:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
+                , fontsize=TITLE_FONTSIZE, va='top')
+            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+                f.write(f'{id},{cal_slope},{cal_intercept},,\n')
+    if len(x_ver)>3:
+        if len(x_ver)<=3:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
+                , fontsize=TITLE_FONTSIZE, va='top')
+            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+                f.write(f'{id},,,{ver_slope},{ver_intercept}\n')
+
     fig2 = plt.gcf()
     fig2.tight_layout()
 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress1')
     fig1.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress2')
@@ -202,7 +251,35 @@ def plotRegression1(df,Target):
     # plt.close()
     return [fig1, fig2]
 
+def plot_hydrograph(df,Target):
+    w = df.columns.tolist()[0]
+    if len(df)==0:
+        print(f"No data for '{w}'!")
+        return None
+    
+    temp = df.iloc[[0,-1],:].copy()
+    temp[w] = Target
+    temp.DataOrigin = 'Target'
+    df = pd.concat([df,temp])
+
+    fig = plt.figure(figsize=(13, 9))
+    sns.scatterplot(data=df, x='Date', y=w, markers=False, s=0)
+    sns.lineplot(data=df, x='Date', y=w, hue='DataOrigin',
+        style='DataOrigin', dashes=[(1,0),(1,0),(3,1)])
+
+    plt.ylabel("Waterlevel, ft NGVD")
+    plt.title(w)
+    plt.tight_layout()
+
+    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hydrograph')
+    fig.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
+
+    return fig
+
 def get1WideTable(w,lowh,rh,need_weekly):
+    owinfo = lowh.owinfo_df.iloc[[i for i,targ in enumerate(lowh.owinfo_df.Target) if not np.isnan(targ)]]
+    LS2Topo = owinfo.SurfEl2CellTopoOffset[owinfo.PointName==w].iloc[0]
     # Wide format table
     obs_ts = lowh.loadHead([w],need_weekly=need_weekly)
     obs_ts.rename(columns={w:f'obs_{w}'},inplace=True)
@@ -212,6 +289,7 @@ def get1WideTable(w,lowh,rh,need_weekly):
         sim_ts.index.name = 'Date'
     sim_ts.rename(columns={w:f'sim_{w}'},inplace=True)
     df = sim_ts.join(obs_ts)
+    df.iloc[:,0] += LS2Topo # add cell offset
     del sim_ts, obs_ts
 
     df.index.name = 'Date'
@@ -229,12 +307,15 @@ def get1WideTable(w,lowh,rh,need_weekly):
     return df,rh.Target[w]
 
 def get1LongTable(w,lowh,rh):
+    owinfo = lowh.owinfo_df.iloc[[i for i,targ in enumerate(lowh.owinfo_df.Target) if not np.isnan(targ)]]
+    LS2Topo = owinfo.SurfEl2CellTopoOffset[owinfo.PointName==w].iloc[0]
     ts = []
     # Column table
-    obs_ts = lowh.loadHead([w],date_index=False)
+    obs_ts = lowh.loadHead([w],date_index=False,need_weekly=need_weekly)
     obs_ts['DataOrigin'] = 'Observed'
 
     sim_ts = rh.getHeadByWellnames([w],date_index=False)
+    sim_ts[[w]] += LS2Topo # add cell offset
     sim_ts['DataOrigin'] = 'Simulated'
 
     df = pd.concat([sim_ts,obs_ts])
@@ -299,8 +380,6 @@ def use_noMP(wnames,lowh,rh):
 if __name__ == '__main__':
     # from memory_profiler import memory_usage
     need_weekly = True
-    use_degug = False
-    MAX_NUM_PROCESSES = 10
     sns.set_theme(style="darkgrid")
     
     if ld.is_Windows:
@@ -319,10 +398,14 @@ if __name__ == '__main__':
         ['BUD-14fl','BUD-21fl','WRW-s','Calm-33A','Cosme-3','James-11','TMR-1','TMR-2','TMR-3','TMR-4','TMR-5'
         ,'201-M','EW-113B','EW-139G','EW-2N','EW-2S','EW-2S-Deep','RMP-13D','RMP-16D','RMP-8D1','ROMP-8D'
         ,'TARPON-RD-DEEP','Hills-13','Jacksn26A','SP-42','SP-45','SR-54']]
-    if use_degug:
+
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
+        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept\n") 
+
+    if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
-        wnames = ['MB-24s']
+        wnames = ['A-1s','MB-24s']
     else:
         use_mp = 'useMP_Queue'
 
@@ -337,7 +420,7 @@ if __name__ == '__main__':
 
     etime = datetime.now()-start_time
     print(f'Elasped time: {etime}')
-    if use_degug:
+    if IS_DEBUGGING:
         plt.show()
 
     # print('Memory usage (in chunks of .1 seconds): %s' % mem_usage)
