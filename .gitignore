@@ -4,6 +4,9 @@ $ git status
 Output/rrv_*/ampl_*.*
 Output/rrv_*/infeas_*.*
 FlowSystemSchematic*/**
+OROP_simobs_EDA/plotWarehouse
+FLOW_simobs_EDA/plotWarehouse
+SPRING_simobs_EDA/plotWarehouse
 OMSBridge/**
 Output_*/**
 *.stat

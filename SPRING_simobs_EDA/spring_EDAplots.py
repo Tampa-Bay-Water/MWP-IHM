@@ -45,7 +45,7 @@ def plotHist(df,SpringInfo):
         print(f"No data for '{w}'!")
         return None
     # Create a 2x2 subplot grid
-    fig = plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(13.5, 9.75))
     sns.set_theme(style="darkgrid")
     axes = {n: fig.add_subplot(2, 2, n) for n in range(1,5)}
 
@@ -102,8 +102,9 @@ def plotHist(df,SpringInfo):
 
     proj_dir = os.path.dirname(os.path.realpath(__file__))
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hist')
-    plt.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
-    # plt.close()
+    plt.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
+    plt.savefig(svfilePath+'.pdf', orientation="landscape"
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
     return fig
 
 def regRobust(X,Y,alpha=0.05):
@@ -186,7 +187,7 @@ def plotRegression1(df,SpringInfo):
 
     # single period
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", height=8)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", height=9)
     g.plot_joint(sns.kdeplot, fill=True, levels=6)
     g.plot_joint(sns.regplot, robust=True, ci=90,
         line_kws={"color":"red"},
@@ -222,7 +223,7 @@ def plotRegression1(df,SpringInfo):
         ver_slope = ver_model.params[w]
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", hue="ModelPeriod", height=8)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", hue="ModelPeriod", height=9)
     g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
@@ -273,9 +274,13 @@ def plotRegression1(df,SpringInfo):
     fig2.tight_layout()
 
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress1')
-    fig1.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
+    fig1.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
+    fig1.savefig(svfilePath+'.pdf', orientation="portrait"
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress2')
-    fig2.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
+    fig2.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
+    fig2.savefig(svfilePath+'.pdf', orientation="portrait"
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
 
     # plt.close()
     return [fig1, fig2]
@@ -288,7 +293,7 @@ def plot_hydrograph(df,SpringInfo):
         print(f"No data for '{w}'!")
         return None
 
-    fig = plt.figure(figsize=(13, 9))
+    fig = plt.figure(figsize=(13.5, 9.75))
     sns.set_theme(style="darkgrid")
 
     sns.scatterplot(data=df, x='Date', y=w, markers=False, s=0)
@@ -302,7 +307,9 @@ def plot_hydrograph(df,SpringInfo):
 
     proj_dir = os.path.dirname(os.path.realpath(__file__))
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hydrograph')
-    fig.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
+    plt.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
+    plt.savefig(svfilePath+'.pdf', orientation="landscape"
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
 
     return fig
 
@@ -429,14 +436,7 @@ if __name__ == '__main__':
     # print('Memory usage (in chunks of .1 seconds): %s' % mem_usage)
     # print('Maximum memory usage: %s' % max(mem_usage))
 
-    # convert image to pdf
-    import img2pdf
-    plotWarehouse = os.path.join(proj_dir,'plotWarehouse')
-    image_files = [i for i in os.listdir(plotWarehouse) if i.endswith(".png")]
-
-    # Sort the list by creation time (the first element of each tuple)
-    image_files.sort()
-
-    with open(os.path.join(proj_dir,"all_plots.pdf"), "wb") as file:
-        file.write(img2pdf.convert([os.path.join(plotWarehouse,i) for i in image_files]))
+    # merge pdf files
+    from image2pdf import merge_pdf
+    merge_pdf(proj_dir)
     exit(0)
