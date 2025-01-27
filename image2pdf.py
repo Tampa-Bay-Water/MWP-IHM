@@ -2,19 +2,37 @@
 import os
 from PyPDF2 import PdfReader, PdfWriter
 from PyPDF2.generic import RectangleObject as RO
+import pandas as pd
 
-def merge_pdf(proj_dir):
+def merge_pdf(proj_dir,df_sorted_name=None):
     plotWarehouse = os.path.join(proj_dir,'plotWarehouse')
-    pdf_filles = [i for i in os.listdir(plotWarehouse) if i.endswith(".pdf")]
+    pdf_files = [i for i in os.listdir(plotWarehouse) if i.endswith(".pdf")]
 
     # Sort the list by creation time (the first element of each tuple)
-    pdf_filles.sort()
+    if not isinstance(df_sorted_name, pd.DataFrame):
+        pdf_files.sort()
+    else:
+        df_sorted_name.reset_index(inplace=True)
+        df_sorted_name['hist'] = df_sorted_name.PointName + '-hist.pdf'
+        df_sorted_name['hydrograph'] = df_sorted_name.PointName + '-hydrograph.pdf'
+        df_sorted_name['reg1'] = df_sorted_name.PointName + '-regress1.pdf'
+        df_sorted_name['reg2'] = df_sorted_name.PointName + '-regress1.pdf'
+        df_sorted_name = pd.concat([
+            df_sorted_name[['index','hist']].rename(columns={'hist': 'fname'}),
+            df_sorted_name[['index','hydrograph']].rename(columns={'hydrograph': 'fname'}),
+            df_sorted_name[['index','reg1']].rename(columns={'reg1': 'fname'}),
+            df_sorted_name[['index','reg2']].rename(columns={'reg2': 'fname'}),        
+            ])
+        df_sorted_name.sort_values(by=['index','fname'],inplace=True)
+        pdf_files = df_sorted_name.fname.to_list()
 
     prefix = os.path.basename(proj_dir).split('_')[0]
     writer = PdfWriter()
 
-    for i in range(len(pdf_filles)):
-        pdf_file = os.path.join(plotWarehouse,pdf_filles[i])
+    for i in range(len(pdf_files)):
+        pdf_file = os.path.join(plotWarehouse,pdf_files[i])
+        if not os.path.exists(pdf_file):
+            continue
         page = PdfReader(pdf_file).pages[0]
 
         # resize mediabox of the last two in the set

@@ -12,8 +12,8 @@ import re
 
 is_Windows = os.name=='nt'
 owinfo_sql = f'''
-    SELECT PointID,A.PointName,WFCode,CTSID,SiteID,INTB_OWID,[Name],A.CellID,LayerNumber,Target
-        , NewLandElevation-Topo SurfEl2CellTopoOffset
+    SELECT PointID,A.PointName,WFCode,CTSID,SiteID,INTB_OWID,[Name],A.CellID,LayerNumber
+        ,Target,TargetType,NewLandElevation-Topo SurfEl2CellTopoOffset
     FROM (
         SELECT PointID,PointName,'OROP CP' PermitType,WFCode,CTSID,SiteID,CellID,INTB_OWID
         FROM [MWP_CWF].[dbo].[OROP_SASwells]
@@ -23,14 +23,14 @@ owinfo_sql = f'''
     ) A
     LEFT JOIN [INTB2_Input].[dbo].[ObservedWell] OW ON OW.ObservedWellID=A.INTB_OWID
     LEFT JOIN (
-        SELECT PointName,TargetWL Target
+        SELECT PointName,TargetWL Target,'OROP_CP' TargetType
         FROM [MWP_CWF].[dbo].[RA_TargetWL]
         UNION
-        SELECT PointName,AvgMin Target
+        SELECT PointName,AvgMin Target,'Regulartory' TargetType
         FROM [MWP_CWF].[dbo].[RA_RegWellPermit]
         UNION
-        SELECT PointName,MinAvg Target
-        FRoM [MWP_CWF].[dbo].[swimalWL]
+        SELECT PointName,MinAvg Target,'SWIMAL' TargetType
+        FROM [MWP_CWF].[dbo].[swimalWL]
     ) C ON A.PointName=C.PointName
     INNER JOIN [INTB2_Input].[dbo].[Cell] B on B.CellID=A.CellID
     WHERE INTB_OWID IS NOT NULL
@@ -211,6 +211,13 @@ class ReadHead:
 			FROM OROP_SASwells A
 			LEFT JOIN RA_TargetWL B ON A.PointName=B.PointName
         ''',conn)
+
+        # update layer number fron owinfo
+        owinfo = pd.read_sql(owinfo_sql,conn)
+        owinfo.loc[owinfo.PointName=='WRW-s','LayerNumber'] = 3
+        for i in owinfo.PointName:
+            df.loc[df.PointName==i,'Layer'] = np.int8(owinfo.LayerNumber[owinfo.PointName==i])[0]
+
         df0 = df[['PointName','Target']]
         self.Target = dict(zip(df0['PointName'], df['Target']))
 
@@ -295,6 +302,11 @@ class LoadObservedHead:
         self.fname = os.path.join(run_dir,'PEST_Run','IHM_Binary_Files','Head.IHM_COPY')
         conn = self.get_DBconn()
         self.owinfo_df = pd.read_sql(owinfo_sql,conn)
+
+        # modify table
+        self.owinfo_df.loc[self.owinfo_df.PointName=='WRW-s','LayerNumber'] = 3 # simulation has no SAS
+        self.owinfo_df.loc[self.owinfo_df.PointName=='RMP-8D1','SurfEl2CellTopoOffset'] = 1.799998
+
         conn.close()
 
     def get_DBconn(self):
@@ -308,6 +320,7 @@ class LoadObservedHead:
             notOROP = set(wnames).difference(set(self.owinfo_df.PointName[indices]))
             raise Warning(f"{notOROP} not in OROP!")
         owinfo = self.owinfo_df.iloc[indices]
+
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
 
@@ -318,7 +331,11 @@ class LoadObservedHead:
             SELECT [Date],{owStrList2}{weekstart}
             FROM (
                 SELECT PointName,CAST([Date] as DATE) Date,[Value]
-                FROM [MWP_CWF].[dbo].[OROP_SASwells] A
+                FROM (
+                    SELECT PointName,INTB_OWID FROM [MWP_CWF].[dbo].[OROP_SASwells]
+                    UNION
+                    SELECT PointName,INTB_OWID FROM [MWP_CWF].[dbo].[OROP_UFASwells]
+                ) A
                 INNER JOIN [INTB2_Input].[dbo].[ObservedWell] OW ON OW.ObservedWellID=A.INTB_OWID
                 INNER JOIN [INTB2_Input].[dbo].[ObservedWellTimeSeries] OWTS ON OW.ObservedWellID=OWTS.ObservedWellID
                 WHERE PointName in {owStrList1}

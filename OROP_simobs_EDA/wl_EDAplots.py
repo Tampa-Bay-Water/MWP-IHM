@@ -227,14 +227,14 @@ def plotRegression1(df,Target):
                 + f"\n      Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top', ma='right')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept}\n')
+                f.write(f'{w},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept}\n')
         else:
             g.ax_joint.text(text_left, text_top
                 , "\nRobust Linear Regression:"
                 + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},{cal_slope},{cal_intercept},,\n')
+                f.write(f'{w},{cal_slope},{cal_intercept},,\n')
     if len(x_ver)>3:
         if len(x_ver)<=3:
             g.ax_joint.text(text_left, text_top
@@ -242,18 +242,18 @@ def plotRegression1(df,Target):
                 + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},,,{ver_slope},{ver_intercept}\n')
+                f.write(f'{w},,,{ver_slope},{ver_intercept}\n')
 
     fig2 = plt.gcf()
     fig2.tight_layout()
 
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress1')
     fig1.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
-    fig1.savefig(svfilePath+'.pdf',
+    fig1.savefig(svfilePath+'.pdf'
         , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress2')
     fig2.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
-    fig2.savefig(svfilePath+'.pdf',
+    fig2.savefig(svfilePath+'.pdf'
         , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
 
     return [fig1, fig2]
@@ -405,19 +405,16 @@ if __name__ == '__main__':
 
     owinfo = lowh.owinfo_df.iloc[[i for i,targ in enumerate(lowh.owinfo_df.Target) if not np.isnan(targ)]]
     wnames = owinfo.PointName.to_list()
-    wnames = [w for w in wnames if w not in 
-        ['BUD-14fl','BUD-21fl','WRW-s','Calm-33A','Cosme-3','James-11','TMR-1','TMR-2','TMR-3','TMR-4','TMR-5'
-        ,'201-M','EW-113B','EW-139G','EW-2N','EW-2S','EW-2S-Deep','RMP-13D','RMP-16D','RMP-8D1','ROMP-8D'
-        ,'TARPON-RD-DEEP','Hills-13','Jacksn26A','SP-42','SP-45','SR-54']]
+    wnames = [w for w in wnames if w not in ['RMP-8D1']]
 
     with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
-        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept\n") 
+        f.write(f"PointName,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept\n") 
 
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
         wnames = ['A-1s','MB-24s']
-        wnames = ['CYB-WT-5-1950','MB-24s']
+        wnames = ['ROMP-8D','RMP-8D1']
     else:
         use_mp = 'useMP_Queue'
 
@@ -440,5 +437,6 @@ if __name__ == '__main__':
 
     # merge pdf files
     from image2pdf import merge_pdf
-    merge_pdf(proj_dir)
+    owinfo_sorted = owinfo.sort_values(by=['TargetType','WFCode','PointName'])[['PointName']]
+    merge_pdf(proj_dir,owinfo_sorted)
     exit(0)
