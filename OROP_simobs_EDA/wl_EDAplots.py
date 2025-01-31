@@ -15,6 +15,7 @@ MAX_NUM_PROCESSES = 10
 FIG_TITLE_FONTSIZE = 12
 TITLE_FONTSIZE = 10
 AX_LABEL_FONTSIZE = 8
+POA = ['1995-01-01','2006-12-31'] # Period of Analysis
 
 def plot_MP(w,lowh,rh,need_weekly=False,q=None,sema=None):
     print(f"starting histogram plot '{w}'")
@@ -84,7 +85,7 @@ def plotHist(df,Target):
 
     plt.tight_layout()
 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(__file__)
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hist')
     plt.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
     plt.savefig(svfilePath+'.pdf', orientation="landscape"
@@ -146,7 +147,7 @@ def plotRegression0(df):
 
     axes.tight_layout(fig)
 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(__file__)
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress')
     plt.savefig(svfilePath,dpi=300, pad_inches=0.1,facecolor='auto', edgecolor='auto')
     # plt.close()
@@ -174,7 +175,17 @@ def plotRegression1(df,Target):
     g.ax_joint.plot(xlim, [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
-    g.ax_marg_y.grid(color='lightgray')    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    g.ax_marg_y.grid(color='lightgray')
+
+    model,yp = regRobust(tempDF.Simulated,tempDF.Observed)
+    intercept = model.params['const']
+    slope = model.params['Simulated']
+    text_left = xlim[0] + (xlim[1]-xlim[0])/40
+    text_top  = g.ax_joint.get_ylim()[1] 
+    g.ax_joint.text(text_left, text_top
+        , "\nRobust Linear Regression:"
+        + f"\ny = {intercept:.3f} + {slope:.3f}x"
+        , fontsize=TITLE_FONTSIZE, va='top', ma='right')
     
     g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
@@ -211,14 +222,15 @@ def plotRegression1(df,Target):
     g.ax_joint.plot(xlim, [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
-    g.ax_marg_y.grid(color='lightgray')    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    g.ax_marg_y.grid(color='lightgray')
+
     g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
     sns.move_legend(g.ax_joint, 'lower right')
     # xlim = g.ax_joint.get_xlim()
     text_left = xlim[0] + (xlim[1]-xlim[0])/40
     text_top  = g.ax_joint.get_ylim()[1] 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(__file__)
     if len(x_cal)>3:
         if len(x_ver)>3:
             g.ax_joint.text(text_left, text_top
@@ -227,14 +239,14 @@ def plotRegression1(df,Target):
                 + f"\n      Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top', ma='right')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{w},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept}\n')
+                f.write(f'{w},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept},{slope},{intercept}\n')
         else:
             g.ax_joint.text(text_left, text_top
                 , "\nRobust Linear Regression:"
                 + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{w},{cal_slope},{cal_intercept},,\n')
+                f.write(f'{w},{cal_slope},{cal_intercept},,,{slope},{intercept}\n')
     if len(x_ver)>3:
         if len(x_ver)<=3:
             g.ax_joint.text(text_left, text_top
@@ -242,7 +254,7 @@ def plotRegression1(df,Target):
                 + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{w},,,{ver_slope},{ver_intercept}\n')
+                f.write(f'{w},,,{ver_slope},{ver_intercept},{slope},{intercept}\n')
 
     fig2 = plt.gcf()
     fig2.tight_layout()
@@ -280,7 +292,7 @@ def plot_hydrograph(df,Target):
     plt.title(w)
     plt.tight_layout()
 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(__file__)
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hydrograph')
     plt.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
     plt.savefig(svfilePath+'.pdf', orientation="landscape"
@@ -294,19 +306,19 @@ def get1WideTable(w,lowh,rh,need_weekly):
     # Wide format table
     obs_ts = lowh.loadHead([w],need_weekly=need_weekly)
     obs_ts.rename(columns={w:f'obs_{w}'},inplace=True)
-    sim_ts = rh.getHeadByWellnames([w])
-    if need_weekly:
-        sim_ts = rh.computeWeeklyAvg(sim_ts)
-        sim_ts.index.name = 'Date'
+    
+    sim_ts = rh.getHeadByWellnames([w],need_weekly=need_weekly)
+    sim_ts[w] += LS2Topo # add cell offset
     sim_ts.rename(columns={w:f'sim_{w}'},inplace=True)
+
     df = sim_ts.join(obs_ts)
-    df.iloc[:,0] += LS2Topo # add cell offset
     del sim_ts, obs_ts
 
     df.index.name = 'Date'
-    df['ModelPeriod'] = 'Calibration'
+    df = df.loc[POA[0]:POA[1]]
+    df['ModelPeriod'] = 'Others'
     if not df.loc['1996-01-01':'2001-12-31'].empty:
-        df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Others'
+        df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -393,10 +405,7 @@ if __name__ == '__main__':
     need_weekly = True
     sns.set_theme(style="darkgrid")
     
-    if ld.is_Windows:
-        proj_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    else:
-        proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(__file__)
     run_dir = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
 
     # Perform EDA for OROP wells
@@ -408,7 +417,7 @@ if __name__ == '__main__':
     wnames = [w for w in wnames if w not in ['RMP-8D1']]
 
     with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
-        f.write(f"PointName,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept\n") 
+        f.write(f"PointName,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
 
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool

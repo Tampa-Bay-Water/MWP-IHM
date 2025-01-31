@@ -42,7 +42,7 @@ def get_DBconn():
     warnings.simplefilter(action='ignore', category=UserWarning)
     if is_Windows:
         dv = '{SQL Server}'
-        sv = 'vgridfs'
+        sv = 'localhost'
         db = 'MWP_CWF'
         conn = pyodbc.connect(
             f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes',autocommit=True)
@@ -190,7 +190,7 @@ class ReadHead:
         x,t,l = self.readHeadMultiTsteps(tsteps,layers)
         return x[:, cellindex],t,l
     
-    def getHeadByWellnames(self,wnames,por=None,date_index=True):
+    def getHeadByWellnames(self,wnames,por=None,date_index=True,need_weekly=False):
         # This function get INTB2 simulated heads for a specified list of OROP wells
         if type(wnames) is not list:
             print(f"Expecting 'wnames' to be a list!")
@@ -224,8 +224,8 @@ class ReadHead:
         # Get date range of simulation
         self.Calendar = pd.read_sql(f'''
             SELECT ROW_NUMBER() OVER(ORDER BY Date ASC) AS rownum
-                ,CAST([Date] AS DATE) [Date]
-                ,CAST(WeekStart AS DATE) WeekStart
+                ,CONVERT(varchar, [Date], 23) [Date]
+                ,CONVERT(varchar, WeekStart, 23) WeekStart
             FROM [INTB2_Input].[dbo].[INTBCalendar]
             ORDER BY Date
         ''',conn)
@@ -264,16 +264,17 @@ class ReadHead:
                 [pd.DataFrame(self.Calendar.Date[range(tsteps[0]-1,tsteps[-1])])
                 ,pd.DataFrame(temp)], axis=1)
             tempDF.columns = ['Date']+df.PointName.to_list()
+        if need_weekly:
+            tempDF = self.computeWeeklyAvg(tempDF)
+        tempDF.index.name = 'Date'
         return tempDF
 
     def computeWeeklyAvg(self,dailyData):
-        caldates = self.Calendar.Date.to_list()
-        weekstart = []
-        for d in dailyData.index:
-            weekstart.append(self.Calendar.WeekStart[caldates.index(datetime.date(d))])
-            # print(f'{datetime.date(d)},{type(datetime.date(d))}')
-        dailyData['WeekStart'] = weekstart
-        return dailyData.groupby('WeekStart').mean()
+        tempDF = self.Calendar.set_index('Date')
+        dailyData['WeekStart'] = [tempDF.loc[d.strftime('%Y-%m-%d')].WeekStart for d in dailyData.index]
+        tempDF = dailyData.groupby('WeekStart').mean()
+        tempDF.index = pd.to_datetime(tempDF.index)
+        return tempDF
     
     def plotData(self,df):
         pointname = df.columns.to_list()[0]
@@ -323,6 +324,8 @@ class LoadObservedHead:
 
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
+        else:
+            weekstart = ''
 
         owStrList1 = str(owinfo['PointName'].to_list()).replace('[','(').replace(']',')')
         owStrList2 = re.sub(r"'([^'']*)'", r'[\1]',owStrList1).replace('(','').replace(')','')
@@ -348,6 +351,8 @@ class LoadObservedHead:
             df = df.groupby('WeekStart')[wnames].mean().reset_index()   # Move the date index to a column
             df = df.rename(columns={'WeekStart': 'Date'})
             df = df.reset_index(drop=True)  # Reindex the DataFrame with a new index
+        else:
+            df['Date'] = pd.to_datetime(df['Date'])
             
         if date_index:
             df.set_index('Date', inplace=True)

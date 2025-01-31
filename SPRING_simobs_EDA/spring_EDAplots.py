@@ -15,6 +15,7 @@ MAX_NUM_PROCESSES = 10
 FIG_TITLE_FONTSIZE = 12
 TITLE_FONTSIZE = 10
 AX_LABEL_FONTSIZE = 8
+POA = ['1995-01-01','2006-12-31'] # Period of Analysis
 
 def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
     print(f"starting histogram plot for SpringID '{id}'")
@@ -203,7 +204,20 @@ def plotRegression1(df,SpringInfo):
     g.figure.suptitle(sprname, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
 
-    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    model,yp = regRobust(tempDF.Simulated,tempDF.Observed)
+    intercept = model.params['const']
+    slope = model.params['Simulated']
+    xlim = g.ax_joint.get_xlim()
+    text_left = xlim[0] + (xlim[1]-xlim[0])/40
+    text_top  = g.ax_joint.get_ylim()[1] 
+    g.ax_joint.text(text_left, text_top
+        , "\nRobust Linear Regression:"
+        + f"\ny = {intercept:.3f} + {slope:.3f}x"
+        , fontsize=TITLE_FONTSIZE, va='top', ma='right')
+
+    g.figure.suptitle(sprname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+
     fig1 = plt.gcf()
     fig1.tight_layout()
 
@@ -253,14 +267,14 @@ def plotRegression1(df,SpringInfo):
                 + f"\n      Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE, va='top', ma='right')
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept}\n')
+                f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept},{slope},{intercept}\n')
         else:
             g.ax_joint.text(text_left, text_top
                 , "\nRobust Linear Regression:"
                 + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE)
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},{cal_slope},{cal_intercept},,\n')
+                f.write(f'{id},{cal_slope},{cal_intercept},,,{slope},{intercept}\n')
     if len(x_ver)>3:
         if len(x_ver)<=3:
             g.ax_joint.text(text_left, text_top
@@ -268,7 +282,7 @@ def plotRegression1(df,SpringInfo):
                 + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
                 , fontsize=TITLE_FONTSIZE)
             with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},,,{ver_slope},{ver_intercept}\n')
+                f.write(f'{id},,,{ver_slope},{ver_intercept},{slope},{intercept}\n')
 
     fig2 = plt.gcf()
     fig2.tight_layout()
@@ -323,9 +337,10 @@ def get1WideTable(id,gf,need_weekly):
     del sim_ts, obs_ts
 
     df.index.name = 'Date'
-    df['ModelPeriod'] = 'Calibration'
+    df = df.loc[POA[0]:POA[1]]
+    df['ModelPeriod'] = 'Others'
     if not df.loc['1996-01-01':'2001-12-31'].empty:
-        df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Others'
+        df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -410,7 +425,7 @@ if __name__ == '__main__':
     springIDs = [i for i in springinfo.SpringID.to_list() if i not in [6,8,9,11]]
 
     with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
-        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept\n") 
+        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
 
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool

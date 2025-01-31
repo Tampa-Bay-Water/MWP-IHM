@@ -16,7 +16,7 @@ def merge_pdf(proj_dir,df_sorted_name=None):
         df_sorted_name['hist'] = df_sorted_name.PointName + '-hist.pdf'
         df_sorted_name['hydrograph'] = df_sorted_name.PointName + '-hydrograph.pdf'
         df_sorted_name['reg1'] = df_sorted_name.PointName + '-regress1.pdf'
-        df_sorted_name['reg2'] = df_sorted_name.PointName + '-regress1.pdf'
+        df_sorted_name['reg2'] = df_sorted_name.PointName + '-regress2.pdf'
         df_sorted_name = pd.concat([
             df_sorted_name[['index','hist']].rename(columns={'hist': 'fname'}),
             df_sorted_name[['index','hydrograph']].rename(columns={'hydrograph': 'fname'}),
@@ -99,10 +99,7 @@ def png2pdf(proj_dir):
         writer.write(f)
 
 if __name__ == '__main__':
-    if os.name=='nt':
-        proj_dir = os.path.dirname(os.path.dirname(__file__))
-    else:
-        proj_dir = os.path.dirname(__file__)
+    proj_dir = os.path.dirname(__file__)
 
     merge_pdf(proj_dir)
     # png2pdf(proj_dir)
