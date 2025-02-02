@@ -177,17 +177,19 @@ def plotRegression1(df,Target):
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')
+    g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
+    g.ax_joint.minorticks_on()
+    g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
+    g.figure.subplots_adjust(top=0.95)
 
     model,yp = regRobust(tempDF.Simulated,tempDF.Observed)
     intercept = model.params['const']
     slope = model.params['Simulated']
-    text_left = xlim[0] + (xlim[1]-xlim[0])/40
-    text_top  = g.ax_joint.get_ylim()[1] 
-    g.ax_joint.text(text_left, text_top
-        , "\nRobust Linear Regression:"
-        + f"\ny = {intercept:.3f} + {slope:.3f}x"
-        , fontsize=TITLE_FONTSIZE, va='top', ma='right')
-    
+    g.ax_joint.text(.98, .98
+        , "Robust Linear Regression:" + f"\ny = {intercept:.3f}{slope:+.3f}x"
+        , va='top', ha='right', transform=g.ax_joint.transAxes
+        , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
+
     g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
 
@@ -210,56 +212,50 @@ def plotRegression1(df,Target):
         ver_slope = ver_model.params[w]
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", hue="ModelPeriod", height=9)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", height=9
+        , hue="ModelPeriod", hue_order=['Calibration','Others'])
     g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
     g.ax_joint.set_xlim(xlim[0],xlim[1])
     if len(x_cal)>3:
-        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
+        g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
     if len(x_ver)>3:
-        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
+        g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
     g.set_axis_labels("Simulated WL, ft NGVD", "Observed WL, ft NGVD")
     g.ax_joint.plot(xlim, [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')
-
+    g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
+    g.ax_joint.minorticks_on()
+    g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
     g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
-    sns.move_legend(g.ax_joint, 'lower right')
-    # xlim = g.ax_joint.get_xlim()
-    text_left = xlim[0] + (xlim[1]-xlim[0])/40
-    text_top  = g.ax_joint.get_ylim()[1] 
-    proj_dir = os.path.dirname(__file__)
-    if len(x_cal)>3:
-        if len(x_ver)>3:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
-                + f"\n      Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
-                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
-            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{w},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept},{slope},{intercept}\n')
-        else:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
-                , fontsize=TITLE_FONTSIZE, va='top')
-            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{w},{cal_slope},{cal_intercept},,,{slope},{intercept}\n')
-    if len(x_ver)>3:
-        if len(x_ver)<=3:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
-                , fontsize=TITLE_FONTSIZE, va='top')
-            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{w},,,{ver_slope},{ver_intercept},{slope},{intercept}\n')
+    sns.move_legend(g.ax_joint, 'upper left')
 
+    t0 = "Robust Linear Regression:"
+    try:
+        t1 = f"\nCalibration: y = {cal_intercept:.3f}{cal_slope:+.3f}x"
+    except UnboundLocalError:
+        print(f"\033[91mEmpty Calibration: {w}\033[0m", file=sys.stderr)
+        t1 = ""
+        cal_intercept = ""
+        cal_slope = ""
+    try:
+        t2 = f"\n     Others: y = {ver_intercept:.3f}{ver_slope:+.3f}x"
+    except UnboundLocalError:
+        print(f"\033[91mEmpty Verification: {w}\033[0m", file=sys.stderr)
+        t2 = ""
+        ver_intercept = ""
+        ver_slope = ""
+    g.ax_joint.text(.98, .98, t0+t1+t2, va='top', ha='right', transform=g.ax_joint.transAxes
+        , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
+
+    plt.tight_layout()
     fig2 = plt.gcf()
-    fig2.tight_layout()
 
+    proj_dir = os.path.dirname(__file__)
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress1')
     fig1.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
     fig1.savefig(svfilePath+'.pdf'
@@ -268,6 +264,9 @@ def plotRegression1(df,Target):
     fig2.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
     fig2.savefig(svfilePath+'.pdf'
         , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
+
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+        f.write(f'{w},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept},{slope},{intercept}\n')
 
     return [fig1, fig2]
 
@@ -324,14 +323,15 @@ def plotResidue(df):
         ver_slope = ver_model.params['Simulated']
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Simulated", y="Residue", hue="ModelPeriod", height=9)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Residue", height=9
+        , hue="ModelPeriod", hue_order=['Calibration','Others'])
     # g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
     if len(x_cal)>3:
-        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
+        g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
     if len(x_ver)>3:
-        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
+        g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
     g.set_axis_labels("Simulated WL, ft NGVD", "Residue, ft")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
@@ -339,40 +339,32 @@ def plotResidue(df):
 
     g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
-    # sns.move_legend(g.ax_joint, 'lower right')
-    xlim = g.ax_joint.get_xlim()
-    text_left = xlim[0] + (xlim[1]-xlim[0])/40
-    text_top  = g.ax_joint.get_ylim()[1] 
-    proj_dir = os.path.dirname(__file__)
+    sns.move_legend(g.ax_joint, 'upper left')
+
     rmse = np.sqrt(np.mean(tempDF['Residue'] ** 2))
-    if len(x_cal)>3:
+    t0 = "Robust Linear Regression:"
+    try:
+        t1 = f"\nCalibration: y = {cal_intercept:.3f}{cal_slope:+.3f}x"
         rmse_cal = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Calibration', 'Residue'] ** 2))
-        if len(x_ver)>3:
-            rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
-                + f"\n     Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
-                + f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
-                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
-        else:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
-                + f", RMSE = {rmse_cal:.2f}"
-                , fontsize=TITLE_FONTSIZE, va='top')
-    if len(x_ver)>3:
+    except UnboundLocalError:
+        # print(f"\033[91mEmpty Calibration: {w}\033[0m", file=sys.stderr)
+        t1 = ""
+        rmse_cal = float('nan')
+    try:
+        t2 = f"\n     Others: y = {ver_intercept:.3f}{ver_slope:+.3f}x"
         rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
-        if len(x_ver)<=3:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
-                + f", RMSE = {rmse_ver:.2f}"
-                , fontsize=TITLE_FONTSIZE, va='top')
+    except UnboundLocalError:
+        # print(f"\033[91mEmpty Verification: {w}\033[0m", file=sys.stderr)
+        t2 = ""
+        rmse_ver = float('nan')
+    t3 = f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
+    g.ax_joint.text(.98, .98, t0+t1+t2+t3, va='top', ha='right', transform=g.ax_joint.transAxes
+        , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
 
     plt.tight_layout()
     fig = plt.gcf()
 
+    proj_dir = os.path.dirname(__file__)
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-residue')
     fig.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
     fig.savefig(svfilePath+'.pdf'
@@ -397,8 +389,7 @@ def get1WideTable(w,lowh,rh,need_weekly):
     df.index.name = 'Date'
     df = df.loc[POA[0]:POA[1]]
     df['ModelPeriod'] = 'Others'
-    if not df.loc['1996-01-01':'2001-12-31'].empty:
-        df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
+    df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -500,8 +491,8 @@ if __name__ == '__main__':
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
-        wnames = ['A-1s','MB-24s']
         wnames = ['ROMP-8D','RMP-8D1']
+        wnames = ['CYC-W56B','TMR-2s','MB-24s']
     else:
         use_mp = 'useMP_Queue'
 

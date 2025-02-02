@@ -250,25 +250,20 @@ def plotRegression1(df,FlowStationInfo):
     g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
     g.ax_joint.minorticks_on()
     g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
-    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
 
     model,yp = regRobust(tempDF.Simulated,tempDF.Observed)
     intercept = model.params['const']
     slope = model.params['Simulated']
-    xlim = g.ax_joint.get_xlim()
-    text_left = xlim[0] + (xlim[1]-xlim[0])/40
-    text_top  = g.ax_joint.get_ylim()[1] 
-    g.ax_joint.text(text_left, text_top
-        , "\nRobust Linear Regression:\n"
-        + r"$\log_{10}(y)$"+f" = {intercept:.3f} + {slope:.3f} "+r"$\log_{10}(x)$"
-        , fontsize=TITLE_FONTSIZE, va='top', ma='right')
+    g.ax_joint.text(.98, .98
+        , "Robust Linear Regression:\n"
+        + r"$\log_{10}(y)$"+f" = {intercept:.3f}{slope:+.3f} "+r"$\log_{10}(x)$"
+        , va='top', ha='right', transform=g.ax_joint.transAxes
+        , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
 
-    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
-    # g.ax_joint.set_xscale("log")
-    # g.ax_joint.set_yscale("log")
-    # g.ax_marg_x.set_xscale('log')
-    # g.ax_marg_y.set_yscale('log')
+    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+
     fig1 = plt.gcf()
     fig1.tight_layout()
 
@@ -278,6 +273,7 @@ def plotRegression1(df,FlowStationInfo):
     x_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Simulated'),w]
     y_cal = df.loc[(df.ModelPeriod=='Calibration' ) & (df.DataOrigin=='Observed' ),w]
     y_ver = df.loc[(df.ModelPeriod=='Others') & (df.DataOrigin=='Observed' ),w]
+
     if len(x_cal)>3:
         cal_model,yp_cal = regRobust(x_cal,y_cal)
         cal_intercept = cal_model.params['const']
@@ -288,7 +284,8 @@ def plotRegression1(df,FlowStationInfo):
         ver_slope = ver_model.params[w]
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", hue="ModelPeriod", height=9)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Observed", height=9
+        , hue="ModelPeriod", hue_order=['Calibration','Others'])
     g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
@@ -300,7 +297,6 @@ def plotRegression1(df,FlowStationInfo):
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')
-
     new_ticks,labels = update_tickmarks(g.ax_joint.get_xticks())
     g.ax_joint.set_xticks(new_ticks)
     g.ax_joint.set_xticklabels(labels)
@@ -310,54 +306,43 @@ def plotRegression1(df,FlowStationInfo):
     g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
     g.ax_joint.minorticks_on()
     g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
-    
-    # g.ax_joint.set_xscale("log")
-    # g.ax_joint.set_yscale("log")
-    # g.ax_marg_x.set_xscale('log')
-    # g.ax_marg_y.set_yscale('log')
     g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
-    sns.move_legend(g.ax_joint, 'lower right')
-    xlim = g.ax_joint.get_xlim()
-    text_left = xlim[0] + (xlim[1]-xlim[0])/40
-    text_top  = g.ax_joint.get_ylim()[1] 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
-    if len(x_cal)>3:
-        if len(x_ver)>3:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + "\nCalibration: "+r"$\log_{10}(y)$"+f" = {cal_intercept:.3f} + {cal_slope:.3f} "+r"$\log_{10}(x)$"
-                + "\n     Others: "+r"$\log_{10}(y)$"+f" = {ver_intercept:.3f} + {ver_slope:.3f} "+r"$\log_{10}(x)$"
-                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
-            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept},{slope},{intercept}\n')
-        else:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + "\nCalibration: "+r"$\log_{10}(y)$"+f" = {cal_intercept:.3f} + {cal_slope:.3f} "+r"$\log_{10}(x)$"
-                , fontsize=TITLE_FONTSIZE, va='top')
-            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},{cal_slope},{cal_intercept},,,{slope},{intercept}\n')
-    if len(x_ver)>3:
-        if len(x_ver)<=3:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + "\nOthers: "+r"$\log_{10}(y)$"+f" = {ver_intercept:.3f} + {ver_slope:.3f} "+r"$\log_{10}(x)$"
-                , fontsize=TITLE_FONTSIZE, va='top')
-            with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
-                f.write(f'{id},,,{ver_slope},{ver_intercept},{slope},{intercept}\n')
+    sns.move_legend(g.ax_joint, 'upper left')
 
+    t0 = "Robust Linear Regression:"
+    try:
+        t1 = f"\nCalibration: "+r"$\log_{10}(y)$"+f" = {cal_intercept:.3f}{cal_slope:+.3f} "+r"$\log_{10}(x)$"
+    except UnboundLocalError:
+        print(f"\033[91mEmpty Calibration: ({id}){staname}\033[0m", file=sys.stderr)
+        t1 = ""
+        cal_intercept = ""
+        cal_slope = ""
+    try:
+        t2 = f"\n     Others: "+r"$\log_{10}(y)$"+f" = {ver_intercept:.3f}{ver_slope:+.3f} "+r"$\log_{10}(x)$"
+    except UnboundLocalError:
+        print(f"\033[91mEmpty Verification: ({id}){staname}\033[0m", file=sys.stderr)
+        t2 = ""
+        ver_intercept = ""
+        ver_slope = ""
+    g.ax_joint.text(.98, .98, t0+t1+t2, va='top', ha='right', transform=g.ax_joint.transAxes
+        , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
+
+    plt.tight_layout()
     fig2 = plt.gcf()
-    fig2.tight_layout()
 
+    proj_dir = os.path.dirname(__file__)
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress1')
     fig1.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
-    fig1.savefig(svfilePath+'.pdf', dpi=300
-        , bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
+    fig1.savefig(svfilePath+'.pdf'
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-regress2')
     fig2.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
-    fig2.savefig(svfilePath+'.pdf', dpi=300
-        , bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
+    fig2.savefig(svfilePath+'.pdf'
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
+
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "a") as f:
+        f.write(f'{id},{cal_slope},{cal_intercept},{ver_slope},{ver_intercept},{slope},{intercept}\n')
 
     return [fig1, fig2]
 
@@ -430,14 +415,15 @@ def plotResidue(df,FlowStationInfo):
         ver_slope = ver_model.params['Simulated']
 
     # Initialize JointGrid
-    g = sns.JointGrid(data=tempDF, x="Simulated", y="Diff", hue="ModelPeriod", height=9)
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Diff", height=9
+        , hue="ModelPeriod", hue_order=['Calibration','Others'])
     # g.plot_joint(sns.kdeplot, levels=6)
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
     if len(x_cal)>3:
-        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
+        g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
     if len(x_ver)>3:
-        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
+        g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
     g.set_axis_labels("Simulated Flow, x in cfs", r"$Diff, y = \log_{10}(Obs)-\log_{10}(Sim)$")
     g.ax_joint.set_ylim(ymin=ymin,ymax=ymax)
     g.ax_joint.grid(color='lightgray')
@@ -447,48 +433,30 @@ def plotResidue(df,FlowStationInfo):
     new_ticks,labels = update_tickmarks(g.ax_joint.get_xticks())
     g.ax_joint.set_xticks(new_ticks)
     g.ax_joint.set_xticklabels(labels)
-    # new_ticks,labels = update_tickmarks(g.ax_joint.get_yticks())
-    # g.ax_joint.set_yticks(new_ticks)
-    # g.ax_joint.set_yticklabels(labels)
-    # g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
-    # g.ax_joint.minorticks_on()
-    # g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
 
     g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
-    # sns.move_legend(g.ax_joint, 'lower right')
-    xlim = g.ax_joint.get_xlim()
-    text_left = xlim[0] + (xlim[1]-xlim[0])/40
-    text_top  = g.ax_joint.get_ylim()[1] 
-    proj_dir = os.path.dirname(__file__)
+    sns.move_legend(g.ax_joint, 'upper left')
     rmse = np.sqrt(np.mean(tempDF['Residue'] ** 2))
-    if len(x_cal)>3:
+    t0 = "Robust Linear Regression:"
+    try:
+        t1 = f"\nCalibration: y = {cal_intercept:.3f}{cal_slope:+.3f} "+r"$\log_{10}(x)$"
         rmse_cal = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Calibration', 'Residue'] ** 2))
-        if len(x_ver)>3:
-            rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f} "+r"$\log_{10}(x)$"
-                + f"\n     Others: y = {ver_intercept:.3f} + {ver_slope:.3f} "+r"$\log_{10}(x)$"
-                + f"\n" + r"$Residue = x * (10^{y}-1)$" 
-                + f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
-                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
-        else:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f} "+r"$\log_{10}(x)$"
-                + f"\n" + r"$Residue = x * (10^{y}-1)$"
-                + f", RMSE = {rmse_cal:.2f}"
-                , fontsize=TITLE_FONTSIZE, va='top')
-    if len(x_ver)>3:
+    except UnboundLocalError:
+        # print(f"\033[91mEmpty Calibration: ({id}){sprname}\033[0m", file=sys.stderr)
+        t1 = ""
+        rmse_cal = float('nan')
+    try:
+        t2 = f"\n     Others: y = {ver_intercept:.3f}{ver_slope:+.3f} "+r"$\log_{10}(x)$"
         rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
-        if len(x_ver)<=3:
-            g.ax_joint.text(text_left, text_top
-                , "\nRobust Linear Regression:"
-                + f"\n     Others: y = {ver_intercept:.3f} + {ver_slope:.3f} "+r"$\log_{10}(x)$"
-                + f"\n" + r"$Residue = x * (10^{y}-1)$"
-                + f", RMSE = {rmse_ver:.2f}"
-                , fontsize=TITLE_FONTSIZE, va='top')
+    except UnboundLocalError:
+        # print(f"\033[91mEmpty Verification: ({id}){sprname}\033[0m", file=sys.stderr)
+        t2 = ""
+        rmse_ver = float('nan')
+    t3 = f"\n" + r"$Residue = x * (10^{y}-1)$" \
+        + f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
+    g.ax_joint.text(.98, .98, t0+t1+t2+t3, va='top', ha='right', transform=g.ax_joint.transAxes
+        , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
 
     plt.tight_layout()
     fig = plt.gcf()
@@ -513,8 +481,7 @@ def get1WideTable(id,gf,need_weekly):
     df.index.name = 'Date'
     df = df.loc[POA[0]:POA[1]]
     df['ModelPeriod'] = 'Others'
-    if not df.loc['1996-01-01':'2001-12-31'].empty:
-        df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
+    df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -586,10 +553,7 @@ if __name__ == '__main__':
     need_weekly = True
     sns.set_theme(style="darkgrid")
     plt.rcParams.update({'font.size': 8, 'savefig.dpi': 300}) 
-    if ld.is_Windows:
-        proj_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    else:
-        proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(os.path.realpath(__file__))
     run_dir = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
 
     # Perform EDA for Streamflow
@@ -603,11 +567,12 @@ if __name__ == '__main__':
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
+        # flowIDs = [i for i in flowIDs if i not in [18,21]]
         flowIDs = [
             # 2,  # HILLS ABOVE CRYSTAL SPRINGS
             # 6,  # HILLS R AT MORRIS BRIDGE
             # 22, # ANCLOTE R NR ELFERS
-            # 24, # PITHLA R NR NEW PT RICHEY 
+            24, # PITHLA R NR NEW PT RICHEY 
             74]
     else:
         use_mp = 'useMP_Queue'
