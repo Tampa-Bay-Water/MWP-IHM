@@ -28,6 +28,7 @@ def plot_MP(w,lowh,rh,need_weekly=False,q=None,sema=None):
 
     fig = [plot_hydrograph(df,Target)] \
         + [plotRegression1(df,Target)] \
+        + [plotResidue(df)] \
         + [plotHist(df,Target)]
     if sema is not None:
         sema.release()
@@ -215,9 +216,9 @@ def plotRegression1(df,Target):
     g.plot_marginals(sns.histplot, kde=True)
     g.ax_joint.set_xlim(xlim[0],xlim[1])
     if len(x_cal)>3:
-        g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
+        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
     if len(x_ver)>3:
-        g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
+        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
     g.set_axis_labels("Simulated WL, ft NGVD", "Observed WL, ft NGVD")
     g.ax_joint.plot(xlim, [Target, Target], color='green', linewidth=1, linestyle="--")
     g.ax_joint.grid(color='lightgray')
@@ -300,6 +301,85 @@ def plot_hydrograph(df,Target):
 
     return fig
 
+def plotResidue(df):
+    w = df.columns.tolist()[0]
+    if len(df)==0:
+        print(f"No data for '{w}'!")
+        return None
+    tempDF = pd.pivot_table(df, values=w, index='Date', columns='DataOrigin', aggfunc='max')
+    tempDF['ModelPeriod'] = df.ModelPeriod[df.DataOrigin=='Simulated'].to_list()
+    tempDF['Residue'] = tempDF['Observed']-tempDF['Simulated']
+
+    x_cal = tempDF.loc[tempDF.ModelPeriod=='Calibration' ,'Simulated']
+    x_ver = tempDF.loc[tempDF.ModelPeriod=='Others' ,'Simulated']
+    y_cal = tempDF.loc[tempDF.ModelPeriod=='Calibration' ,'Residue']
+    y_ver = tempDF.loc[tempDF.ModelPeriod=='Others' ,'Residue']
+    if len(x_cal)>3:
+        cal_model,yp_cal = regRobust(x_cal,y_cal)
+        cal_intercept = cal_model.params['const']
+        cal_slope = cal_model.params['Simulated']
+    if len(x_ver)>3:
+        ver_model,yp_ver = regRobust(x_ver,y_ver)
+        ver_intercept = ver_model.params['const']
+        ver_slope = ver_model.params['Simulated']
+
+    # Initialize JointGrid
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Residue", hue="ModelPeriod", height=9)
+    # g.plot_joint(sns.kdeplot, levels=6)
+    g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
+    g.plot_marginals(sns.histplot, kde=True)
+    if len(x_cal)>3:
+        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
+    if len(x_ver)>3:
+        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
+    g.set_axis_labels("Simulated WL, ft NGVD", "Residue, ft")
+    g.ax_joint.grid(color='lightgray')
+    g.ax_marg_x.grid(color='lightgray')
+    g.ax_marg_y.grid(color='lightgray')
+
+    g.figure.suptitle(w, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+    # sns.move_legend(g.ax_joint, 'lower right')
+    xlim = g.ax_joint.get_xlim()
+    text_left = xlim[0] + (xlim[1]-xlim[0])/40
+    text_top  = g.ax_joint.get_ylim()[1] 
+    proj_dir = os.path.dirname(__file__)
+    rmse = np.sqrt(np.mean(tempDF['Residue'] ** 2))
+    if len(x_cal)>3:
+        rmse_cal = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Calibration', 'Residue'] ** 2))
+        if len(x_ver)>3:
+            rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
+                + f"\n     Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
+                + f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
+                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
+        else:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
+                + f", RMSE = {rmse_cal:.2f}"
+                , fontsize=TITLE_FONTSIZE, va='top')
+    if len(x_ver)>3:
+        rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
+        if len(x_ver)<=3:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
+                + f", RMSE = {rmse_ver:.2f}"
+                , fontsize=TITLE_FONTSIZE, va='top')
+
+    plt.tight_layout()
+    fig = plt.gcf()
+
+    svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-residue')
+    fig.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
+    fig.savefig(svfilePath+'.pdf'
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
+
+    return fig
+
 def get1WideTable(w,lowh,rh,need_weekly):
     owinfo = lowh.owinfo_df.iloc[[i for i,targ in enumerate(lowh.owinfo_df.Target) if not np.isnan(targ)]]
     LS2Topo = owinfo.SurfEl2CellTopoOffset[owinfo.PointName==w].iloc[0]
@@ -332,18 +412,16 @@ def get1WideTable(w,lowh,rh,need_weekly):
 def get1LongTable(w,lowh,rh):
     owinfo = lowh.owinfo_df.iloc[[i for i,targ in enumerate(lowh.owinfo_df.Target) if not np.isnan(targ)]]
     LS2Topo = owinfo.SurfEl2CellTopoOffset[owinfo.PointName==w].iloc[0]
-    ts = []
+
     # Column table
-    obs_ts = lowh.loadHead([w],date_index=False,need_weekly=need_weekly)
+    obs_ts = lowh.loadHead([w],date_index=True,need_weekly=need_weekly)
     obs_ts['DataOrigin'] = 'Observed'
 
-    sim_ts = rh.getHeadByWellnames([w],date_index=False)
+    sim_ts = rh.getHeadByWellnames([w],date_index=True,need_weekly=need_weekly)
     sim_ts[[w]] += LS2Topo # add cell offset
     sim_ts['DataOrigin'] = 'Simulated'
 
-    df = pd.concat([sim_ts,obs_ts])
-    ts.append(df)
-    return ts
+    return pd.concat([sim_ts,obs_ts])
 
 def getMatchDataTable(w,df):
     # Match data, get rid of Nan (missing value)

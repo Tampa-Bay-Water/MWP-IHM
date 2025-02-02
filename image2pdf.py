@@ -17,11 +17,13 @@ def merge_pdf(proj_dir,df_sorted_name=None):
         df_sorted_name['hydrograph'] = df_sorted_name.PointName + '-hydrograph.pdf'
         df_sorted_name['reg1'] = df_sorted_name.PointName + '-regress1.pdf'
         df_sorted_name['reg2'] = df_sorted_name.PointName + '-regress2.pdf'
+        df_sorted_name['residue'] = df_sorted_name.PointName + '-residue.pdf'
         df_sorted_name = pd.concat([
             df_sorted_name[['index','hist']].rename(columns={'hist': 'fname'}),
             df_sorted_name[['index','hydrograph']].rename(columns={'hydrograph': 'fname'}),
             df_sorted_name[['index','reg1']].rename(columns={'reg1': 'fname'}),
             df_sorted_name[['index','reg2']].rename(columns={'reg2': 'fname'}),        
+            df_sorted_name[['index','residue']].rename(columns={'residue': 'fname'}),        
             ])
         df_sorted_name.sort_values(by=['index','fname'],inplace=True)
         pdf_files = df_sorted_name.fname.to_list()

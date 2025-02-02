@@ -27,6 +27,7 @@ def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
 
     fig = [plot_hydrograph(df,gf.SpringInfo)] \
         + [plotRegression1(df,gf.SpringInfo)] \
+        + [plotResidue(df,gf.SpringInfo)] \
         + [plotHist(df,gf.SpringInfo)]
     if sema is not None:
         sema.release()
@@ -242,13 +243,13 @@ def plotRegression1(df,SpringInfo):
     g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
     g.plot_marginals(sns.histplot, kde=True)
     if len(x_cal)>3:
-        g.ax_joint.plot(x_cal, yp_cal, color='blue', linewidth=3)
+        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
     if len(x_ver)>3:
-        g.ax_joint.plot(x_ver, yp_ver, color='red', linewidth=3)
+        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
     g.set_axis_labels("Simulated Flow, cfs", "Observed Flow, cfs")
     g.ax_joint.grid(color='lightgray')
     g.ax_marg_x.grid(color='lightgray')
-    g.ax_marg_y.grid(color='lightgray')    # g.ax_joint.plot([Target, Target], (plt.gca().get_ylim()), color='green', linewidth=1, linestyle="--")
+    g.ax_marg_y.grid(color='lightgray')
     g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
     g.ax_joint.minorticks_on()
     g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
@@ -323,6 +324,96 @@ def plot_hydrograph(df,SpringInfo):
     svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-hydrograph')
     plt.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
     plt.savefig(svfilePath+'.pdf', orientation="landscape"
+        , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
+
+    return fig
+
+def plotResidue(df,SpringInfo):
+    w = df.columns.tolist()[0]
+    id = int(w.replace('ID_',''))
+    sprname = SpringInfo.loc[SpringInfo.SpringID==id,'SpringName'].values[0]
+    if len(df)==0:
+        print(f"No data for Spring gage: '{sprname}'!")
+        return None
+
+    # remove flow close to zero and report the prob of flow=0
+    zero_flow = 0.001
+    i_temp = df.index=='3000-01-01'
+    i_zero = df[df[w]<zero_flow].index
+    for i in i_zero:
+        i_temp |= (df.index==i)
+    df = df[~i_temp]
+    tempDF = pd.pivot_table(df, values=w, index='Date', columns='DataOrigin', aggfunc='max')
+    tempDF['ModelPeriod'] = df.ModelPeriod[df.DataOrigin=='Simulated'].to_list()
+    tempDF['Residue'] = tempDF['Observed']-tempDF['Simulated']
+
+    x_cal = tempDF.loc[tempDF.ModelPeriod=='Calibration' ,'Simulated']
+    x_ver = tempDF.loc[tempDF.ModelPeriod=='Others' ,'Simulated']
+    y_cal = tempDF.loc[tempDF.ModelPeriod=='Calibration' ,'Residue']
+    y_ver = tempDF.loc[tempDF.ModelPeriod=='Others' ,'Residue']
+    if len(x_cal)>3:
+        cal_model,yp_cal = regRobust(x_cal,y_cal)
+        cal_intercept = cal_model.params['const']
+        cal_slope = cal_model.params['Simulated']
+    if len(x_ver)>3:
+        ver_model,yp_ver = regRobust(x_ver,y_ver)
+        ver_intercept = ver_model.params['const']
+        ver_slope = ver_model.params['Simulated']
+
+    # Initialize JointGrid
+    g = sns.JointGrid(data=tempDF, x="Simulated", y="Residue", hue="ModelPeriod", height=9)
+    # g.plot_joint(sns.kdeplot, levels=6)
+    g.plot_joint(sns.scatterplot, edgecolor="white" ,linewidths=0.25 ,s=20)
+    g.plot_marginals(sns.histplot, kde=True)
+    if len(x_cal)>3:
+        g.ax_joint.plot(x_cal, yp_cal, color='red', linewidth=3)
+    if len(x_ver)>3:
+        g.ax_joint.plot(x_ver, yp_ver, color='blue', linewidth=3)
+    g.set_axis_labels("Simulated Flow, cfs", "Residue, cfs")
+    g.ax_joint.grid(color='lightgray')
+    g.ax_marg_x.grid(color='lightgray')
+    g.ax_marg_y.grid(color='lightgray')
+
+    g.figure.suptitle(sprname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.subplots_adjust(top=0.95)
+    # sns.move_legend(g.ax_joint, 'lower right')
+    xlim = g.ax_joint.get_xlim()
+    text_left = xlim[0] + (xlim[1]-xlim[0])/40
+    text_top  = g.ax_joint.get_ylim()[1] 
+    proj_dir = os.path.dirname(__file__)
+    rmse = np.sqrt(np.mean(tempDF['Residue'] ** 2))
+    if len(x_cal)>3:
+        rmse_cal = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Calibration', 'Residue'] ** 2))
+        if len(x_ver)>3:
+            rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
+                + f"\n     Others: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
+                + f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
+                , fontsize=TITLE_FONTSIZE, va='top', ma='right')
+        else:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nCalibration: y = {cal_intercept:.3f} + {cal_slope:.3f}x"
+                + f", RMSE = {rmse_cal:.2f}"
+                , fontsize=TITLE_FONTSIZE, va='top')
+    if len(x_ver)>3:
+        rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
+        if len(x_ver)<=3:
+            g.ax_joint.text(text_left, text_top
+                , "\nRobust Linear Regression:"
+                + f"\nOthers: y = {ver_intercept:.3f} + {ver_slope:.3f}x"
+                + f", RMSE = {rmse_ver:.2f}"
+                , fontsize=TITLE_FONTSIZE, va='top')
+
+    plt.tight_layout()
+    fig = plt.gcf()
+
+    proj_dir = os.path.dirname(__file__)
+    svfilePath = os.path.join(proj_dir,'plotWarehouse',f'{w}-residue')
+    fig.savefig(svfilePath, dpi=300, pad_inches=0.1, facecolor='auto', edgecolor='auto')
+    fig.savefig(svfilePath+'.pdf'
         , dpi=300, bbox_inches="tight", pad_inches=1, facecolor='auto', edgecolor='auto')
 
     return fig
