@@ -15,7 +15,17 @@ MAX_NUM_PROCESSES = 10
 FIG_TITLE_FONTSIZE = 12
 TITLE_FONTSIZE = 10
 AX_LABEL_FONTSIZE = 8
-POA = ['1995-01-01','2006-12-31'] # Period of Analysis
+
+INTB_VERSION = 1
+POA = [
+    ['1989-01-01','2006-12-31'],
+    ['1995-01-01','2006-12-31'],
+    ] # Period of Analysis [INTB1,INTB2]
+CAL_PERIOD = [
+    ['1989-01-01','1998-12-31'],
+    ['1996-01-01','2001-12-31'],
+    ]
+
 
 def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
     print(f"starting histogram plot for Flow Station '{id}'")
@@ -479,9 +489,13 @@ def get1WideTable(id,gf,need_weekly):
     del sim_ts, obs_ts
 
     df.index.name = 'Date'
-    df = df.loc[POA[0]:POA[1]]
     df['ModelPeriod'] = 'Others'
-    df.loc['1996-01-01':'2001-12-31', 'ModelPeriod'] = 'Calibration'
+    if INTB_VERSION==2:
+        df = df.loc[POA[1][0]:POA[1][1]]
+        df.loc[CAL_PERIOD[1][0]:CAL_PERIOD[1][1], 'ModelPeriod'] = 'Calibration'
+    else:
+        df = df.loc[POA[0][0]:POA[0][1]]
+        df.loc[CAL_PERIOD[0][0]:CAL_PERIOD[0][1], 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -554,7 +568,10 @@ if __name__ == '__main__':
     sns.set_theme(style="darkgrid")
     plt.rcParams.update({'font.size': 8, 'savefig.dpi': 300}) 
     proj_dir = os.path.dirname(os.path.realpath(__file__))
-    run_dir = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
+    if INTB_VERSION==2:
+        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
+    else:
+        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB_403')
 
     # Perform EDA for Streamflow
     gf = GetFlow(run_dir)

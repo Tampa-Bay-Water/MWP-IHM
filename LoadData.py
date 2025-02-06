@@ -564,10 +564,7 @@ class GetFlow:
 
 
 if __name__ == '__main__':
-    if is_Windows:
-        proj_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    else:
-        proj_dir = os.path.dirname(os.path.realpath(__file__))
+    proj_dir = os.path.dirname(os.path.dirname((__file__)))
     run_dir = os.path.join(proj_dir,'INTB2_bp424')
 
     exit(0)
