@@ -2,29 +2,43 @@ import numpy as np
 import os
 import sys
 import pandas as pd
-import pyodbc
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 import LoadData as ld
 from LoadData import ReadHead, LoadObservedHead
+import yaml
 
-IS_DEBUGGING = False
-FILE_REGRESSION_PARAMS = r"wl_regression_params.csv"
-MAX_NUM_PROCESSES = 10
-FIG_TITLE_FONTSIZE = 12
-TITLE_FONTSIZE = 10
-AX_LABEL_FONTSIZE = 8
+ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_FILE = os.path.join(ROOT_DIR,'config.yaml')
+with open(CONFIG_FILE, 'r') as file:
+    try:
+        CONFIG = yaml.safe_load(file)
+    except yaml.YAMLError as e:
+        print(f"\033[91mError parsing YAML file: {e}\033[0m", file=sys.stderr)
+        CONFIG = None
 
-INTB_VERSION = 1
-POA = [
-    ['1989-01-01','2006-12-31'],
-    ['1995-01-01','2006-12-31'],
-    ] # Period of Analysis [INTB1,INTB2]
-CAL_PERIOD = [
-    ['1989-01-01','1998-12-31'],
-    ['1996-01-01','2001-12-31'],
-    ]
+IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
+MAX_NUM_PROCESSES = CONFIG['general']['MAX_NUM_PROCESSES']
+INTB_VERSION = CONFIG['general']['INTB_VERSION']
+FILE_REGRESSION_PARAMS = CONFIG['general']['FILE_REGRESSION_PARAMS']
+
+FIG_TITLE_FONTSIZE = CONFIG['plotting']['FIG_TITLE_FONTSIZE']
+TITLE_FONTSIZE = CONFIG['plotting']['TITLE_FONTSIZE']
+AX_LABEL_FONTSIZE = CONFIG['plotting']['AX_LABEL_FONTSIZE']
+
+if INTB_VERSION==1:
+    # Period of Analysis INTB1
+    POA = [CONFIG['INTB1']['POA_sdate'],CONFIG['INTB1']['POA_edate']]
+    # Calibration period INTB1
+    CAL_PERIOD = [CONFIG['INTB1']['CAL_PERIOD_sdate'],CONFIG['INTB1']['CAL_PERIOD_edate']]
+    RUN_DIRNAME = CONFIG['INTB1']['RUN_DIRNAME']
+else:
+    # Period of Analysis INTB1
+    POA = [CONFIG['INTB2']['POA_sdate'],CONFIG['INTB2']['POA_edate']]
+    # Calibration period INTB1
+    CAL_PERIOD = [CONFIG['INTB2']['CAL_PERIOD_sdate'],CONFIG['INTB2']['CAL_PERIOD_edate']]
+    RUN_DIRNAME = CONFIG['INTB2']['RUN_DIRNAME']
 
 
 def plot_MP(w,lowh,rh,need_weekly=False,q=None,sema=None):
@@ -398,12 +412,8 @@ def get1WideTable(w,lowh,rh,need_weekly):
 
     df.index.name = 'Date'
     df['ModelPeriod'] = 'Others'
-    if INTB_VERSION==2:
-        df = df.loc[POA[1][0]:POA[1][1]]
-        df.loc[CAL_PERIOD[1][0]:CAL_PERIOD[1][1], 'ModelPeriod'] = 'Calibration'
-    else:
-        df = df.loc[POA[0][0]:POA[0][1]]
-        df.loc[CAL_PERIOD[0][0]:CAL_PERIOD[0][1], 'ModelPeriod'] = 'Calibration'
+    df = df.loc[POA[0]:POA[1]]
+    df.loc[CAL_PERIOD[0]:CAL_PERIOD[1], 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -441,7 +451,8 @@ def getMatchDataTable(w,df):
     del df1,df2
     return df
 
-def useMP_Queue(wnames,lowh,rh):
+# def useMP_Queue(wnames,lowh,rh):
+def useMP_Queue():
     import multiprocessing as mp
     # create queue to get return value
     q = mp.Queue()
@@ -463,7 +474,7 @@ def useMP_Queue(wnames,lowh,rh):
         p.join()
     return rtnval
 
-def useMP_Pool(wnames,lowh,rh):
+def useMP_Pool():
     import multiprocessing as mp
     rtnval = []
     with mp.Pool(processes=5) as pool:
@@ -476,62 +487,89 @@ def useMP_Pool(wnames,lowh,rh):
 
     return rtnval
 
-def use_noMP(wnames,lowh,rh):
-    rtnval = []
-    for w in wnames:
-        rtnval += plot_MP(w,lowh,rh,need_weekly)
-    return rtnval
+def use_noMP():
+    return [plot_MP(w,lowh,rh,need_weekly) for w in wnames]
+
+def move_result():
+    import shutil
+    # zip plotWarehouse directory (holding graphic images and pdf files) and move to the result directory
+    prefix = os.path.basename(__file__).split('_')[0]
+    result_dir = os.path.join(os.path.dirname(proj_dir),f'INTB{INTB_VERSION}_EDA results')
+    shutil.make_archive(
+        os.path.join(result_dir,f'{prefix}_plotWarehouse')
+        , 'zip', os.path.join(proj_dir,'plotWarehouse')
+    )
+
+    # move csv file
+    filename = f'{prefix}_{FILE_REGRESSION_PARAMS}'
+    shutil.move(os.path.join(proj_dir, FILE_REGRESSION_PARAMS), os.path.join(result_dir, filename))
+
+    # move merged pdf file
+    filename = 'all_plots.pdf'
+    shutil.move(os.path.join(proj_dir, filename), os.path.join(result_dir, f'{prefix}_{filename}'))
 
 
 if __name__ == '__main__':
+    from image2pdf import merge_pdf
     # from memory_profiler import memory_usage
+
     need_weekly = True
     sns.set_theme(style="darkgrid")
-    
+    plt.rcParams.update({'font.size': 8, 'savefig.dpi': 300})
+
     proj_dir = os.path.dirname(__file__)
-    if INTB_VERSION==2:
-        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
-    else:
-        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB_403')
+    run_dir  = os.path.join(os.path.dirname(proj_dir),RUN_DIRNAME)
 
     # Perform EDA for OROP wells
     lowh = LoadObservedHead(run_dir)
     rh = ReadHead(run_dir)
-
     owinfo = lowh.owinfo_df.iloc[[i for i,targ in enumerate(lowh.owinfo_df.Target) if not np.isnan(targ)]]
     wnames = owinfo.PointName.to_list()
     wnames = [w for w in wnames if w not in ['RMP-8D1']]
 
-    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
-        f.write(f"PointName,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
+    # sortedDF = owinfo.sort_values(by=['TargetType','WFCode','PointName'])[['PointName']]
+    # merge_pdf(proj_dir,sortedDF)
+    # move_result()
 
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
         wnames = ['ROMP-8D','RMP-8D1']
         wnames = ['CYC-W56B','TMR-2s','MB-24s']
+        wnames = ['Calm-33A','TMR-1As','TMR-4s']
     else:
         use_mp = 'useMP_Queue'
+        plotWarehouse = os.path.join(proj_dir,'plotWarehouse')
+        for f in os.listdir(plotWarehouse):
+            try:
+                os.remove(os.path.join(plotWarehouse,f))
+            except OSError as err:
+                print(err)
+
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
+        f.write(f"PointName,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
 
     start_time = datetime.now()
     if use_mp=='useMP_Queue':
-        rtnval = useMP_Queue(wnames,lowh,rh)
+        rtnval = useMP_Queue()
     elif use_mp=='useMP_Pool':
-        rtnval = useMP_Pool(wnames,lowh,rh)
+        rtnval = useMP_Pool()
     else:
-        rtnval = use_noMP(wnames,lowh,rh)
+        rtnval = use_noMP()
         # mem_usage = memory_usage(use_noMP)
 
     etime = datetime.now()-start_time
     print(f'Elasped time: {etime}')
-    if IS_DEBUGGING:
-        plt.show()
 
     # print('Memory usage (in chunks of .1 seconds): %s' % mem_usage)
     # print('Maximum memory usage: %s' % max(mem_usage))
 
-    # merge pdf files
-    from image2pdf import merge_pdf
-    owinfo_sorted = owinfo.sort_values(by=['TargetType','WFCode','PointName'])[['PointName']]
-    merge_pdf(proj_dir,owinfo_sorted)
+    if IS_DEBUGGING:
+        plt.show()
+    else:
+        # merge pdf files
+        sortedDF = owinfo.sort_values(by=['TargetType','WFCode','PointName'])[['PointName']]
+        merge_pdf(proj_dir,sortedDF)
+        move_result()
+
     exit(0)

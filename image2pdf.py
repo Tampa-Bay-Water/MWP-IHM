@@ -28,9 +28,7 @@ def merge_pdf(proj_dir,df_sorted_name=None):
         df_sorted_name.sort_values(by=['index','fname'],inplace=True)
         pdf_files = df_sorted_name.fname.to_list()
 
-    prefix = os.path.basename(proj_dir).split('_')[0]
     writer = PdfWriter()
-
     for i in range(len(pdf_files)):
         pdf_file = os.path.join(plotWarehouse,pdf_files[i])
         if not os.path.exists(pdf_file):
@@ -48,11 +46,12 @@ def merge_pdf(proj_dir,df_sorted_name=None):
         
         writer.add_page(page)
 
-    merge_file = os.path.join(proj_dir,f"{prefix}_all_plots.pdf")
+    merge_file = os.path.join(proj_dir,"all_plots.pdf")
     if os.path.exists(merge_file):
         os.remove(merge_file)
     with open(merge_file, 'wb') as f:
         writer.write(f)
+
 
 def png2pdf(proj_dir):
     from PIL import Image

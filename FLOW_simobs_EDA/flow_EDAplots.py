@@ -2,29 +2,44 @@ import numpy as np
 import os
 import sys
 import pandas as pd
-import pyodbc
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 import LoadData as ld
 from LoadData import GetFlow
+import yaml
 
-IS_DEBUGGING = False
-FILE_REGRESSION_PARAMS = r"flow_regression_params.csv"
-MAX_NUM_PROCESSES = 10
-FIG_TITLE_FONTSIZE = 12
-TITLE_FONTSIZE = 10
-AX_LABEL_FONTSIZE = 8
+ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_FILE = os.path.join(ROOT_DIR,'config.yaml')
+with open(CONFIG_FILE, 'r') as file:
+    try:
+        CONFIG = yaml.safe_load(file)
+    except yaml.YAMLError as e:
+        print(f"\033[91mError parsing YAML file: {e}\033[0m", file=sys.stderr)
+        CONFIG = None
 
-INTB_VERSION = 1
-POA = [
-    ['1989-01-01','2006-12-31'],
-    ['1995-01-01','2006-12-31'],
-    ] # Period of Analysis [INTB1,INTB2]
-CAL_PERIOD = [
-    ['1989-01-01','1998-12-31'],
-    ['1996-01-01','2001-12-31'],
-    ]
+IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
+MAX_NUM_PROCESSES = CONFIG['general']['MAX_NUM_PROCESSES']
+INTB_VERSION = CONFIG['general']['INTB_VERSION']
+FILE_REGRESSION_PARAMS = CONFIG['general']['FILE_REGRESSION_PARAMS']
+ZERO_FLOW = CONFIG['general']['ZERO_FLOW']
+
+FIG_TITLE_FONTSIZE = CONFIG['plotting']['FIG_TITLE_FONTSIZE']
+TITLE_FONTSIZE = CONFIG['plotting']['TITLE_FONTSIZE']
+AX_LABEL_FONTSIZE = CONFIG['plotting']['AX_LABEL_FONTSIZE']
+
+if INTB_VERSION==1:
+    # Period of Analysis INTB1
+    POA = [CONFIG['INTB1']['POA_sdate'],CONFIG['INTB1']['POA_edate']]
+    # Calibration period INTB1
+    CAL_PERIOD = [CONFIG['INTB1']['CAL_PERIOD_sdate'],CONFIG['INTB1']['CAL_PERIOD_edate']]
+    RUN_DIRNAME = CONFIG['INTB1']['RUN_DIRNAME']
+else:
+    # Period of Analysis INTB1
+    POA = [CONFIG['INTB2']['POA_sdate'],CONFIG['INTB2']['POA_edate']]
+    # Calibration period INTB1
+    CAL_PERIOD = [CONFIG['INTB2']['CAL_PERIOD_sdate'],CONFIG['INTB2']['CAL_PERIOD_edate']]
+    RUN_DIRNAME = CONFIG['INTB2']['RUN_DIRNAME']
 
 
 def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
@@ -35,10 +50,13 @@ def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
         print(f"No data for FlowStationID = '{id}'!")
         return None
 
-    fig = [plot_hydrograph(df,gf.FlowStationInfo)] \
-        + [plotRegression1(df,gf.FlowStationInfo)] \
-        + [plotResidue(df,gf.FlowStationInfo)] \
-        + [plotHist(df,gf.FlowStationInfo)]
+    staname = gf.FlowStationInfo.loc[gf.FlowStationInfo.FlowStationID==id,'StationName'].values[0]
+    dflog = df.copy()
+    dflog[f'ID_{id:02}'] = np.log10(dflog[f'ID_{id:02}'])
+    fig = [plot_hydrograph(df,staname)] \
+        + [plotRegression1(dflog,staname)] \
+        + [plotResidue(dflog,staname)] \
+        + [plotHist(df,staname)]
     if sema is not None:
         sema.release()
 
@@ -49,10 +67,9 @@ def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
 
     return fig
 
-def plotHist(df,FlowStationInfo):
+def plotHist(df,loc_name):
     w = df.columns.tolist()[0]
     id = int(w.replace('ID_',''))
-    staname = FlowStationInfo.loc[FlowStationInfo.FlowStationID==id,'StationName'].values[0]
     if len(df)==0:
         print(f"No data for '{w}'!")
         return None
@@ -61,21 +78,20 @@ def plotHist(df,FlowStationInfo):
     sns.set_theme(style="darkgrid")
     axes = {n: fig.add_subplot(2, 2, n) for n in range(1,5)}
 
-    # remove flow close to zero and report the prob of flow=0
-    zero_flow = 0.001
-    i_obs = df['DataOrigin']=='Observed'
-    i_obs0 = (df[w]<zero_flow) & i_obs
-    n_obs0 = sum(i_obs0)
-    if n_obs0>0:
-        df = df.loc[~i_obs0]
-    i_sim = df['DataOrigin']=='Simulated'
-    i_sim0 = (df[w]<zero_flow) & i_sim
-    n_sim0 = sum(i_sim0)
-    if n_sim0>0:
-        df = df.loc[~i_sim0]
+    # # remove flow close to zero and report the prob of flow=0
+    # i_obs = df['DataOrigin']=='Observed'
+    # i_obs0 = (df[w]<ZERO_FLOW) & i_obs
+    # n_obs0 = sum(i_obs0)
+    # if n_obs0>0:
+    #     df = df.loc[~i_obs0]
+    # i_sim = df['DataOrigin']=='Simulated'
+    # i_sim0 = (df[w]<ZERO_FLOW) & i_sim
+    # n_sim0 = sum(i_sim0)
+    # if n_sim0>0:
+    #     df = df.loc[~i_sim0]
 
     sns.histplot(data=df, x=w, hue="DataOrigin", element="step", kde=True, log_scale=True, ax=axes[1])
-    axes[1].set_title(f"Compare Histograms of '{staname}'", fontsize=TITLE_FONTSIZE)
+    axes[1].set_title(f"Compare Histograms of '{loc_name}'", fontsize=TITLE_FONTSIZE)
     axes[1].set_ylabel("Count", fontsize=AX_LABEL_FONTSIZE)
     
     # if Target!=None:
@@ -88,7 +104,7 @@ def plotHist(df,FlowStationInfo):
     sns.ecdfplot(data=df, x=w, hue="DataOrigin", log_scale=True, ax=axes[2])
     # sns.lineplot(x=[Target,Target], y=[0,1], ax=axes[2],
     #     linestyle='--', color='black', linewidth=1) #, label='Target')
-    axes[2].set_title(f"Compare CDF of '{staname}'", fontsize=TITLE_FONTSIZE)
+    axes[2].set_title(f"Compare CDF of '{loc_name}'", fontsize=TITLE_FONTSIZE)
     axes[2].set_ylabel("Probability", fontsize=AX_LABEL_FONTSIZE)
 
     sns.boxplot(data=df, x=w, hue="DataOrigin", log_scale=True, ax=axes[3])
@@ -96,10 +112,10 @@ def plotHist(df,FlowStationInfo):
         r, g, b, a = patch.get_facecolor()
         patch.set_facecolor((r, g, b, 0.5))
     # sns.despine(offset=10, trim=True, ax=axes[0, 1])
-    axes[3].set_title(f"Boxplot of '{staname}'", fontsize=TITLE_FONTSIZE)
+    axes[3].set_title(f"Boxplot of '{loc_name}'", fontsize=TITLE_FONTSIZE)
 
     sns.violinplot(data=df, x=w, hue="DataOrigin", log_scale=True, ax=axes[4], split=True, inner="quart", fill=False)
-    axes[4].set_title(f"Violin Plot of '{staname}'", fontsize=TITLE_FONTSIZE)
+    axes[4].set_title(f"Violin Plot of '{loc_name}'", fontsize=TITLE_FONTSIZE)
     axes[4].set_ylabel("Probability", fontsize=AX_LABEL_FONTSIZE)
 
     for k in range(1,5):
@@ -217,22 +233,19 @@ def update_tickmarks(old_ticks):
     #         labels.append(r"$10^{"+f"{round(x-0.1)}"+r"}$")
     return new_ticks,labels
 
-def plotRegression1(df,FlowStationInfo):
+def plotRegression1(df,loc_name):
     w = df.columns.tolist()[0]
     id = int(w.replace('ID_',''))
-    staname = FlowStationInfo.loc[FlowStationInfo.FlowStationID==id,'StationName'].values[0]
     if len(df)==0:
-        print(f"No data for flow gage: '{staname}'!")
+        print(f"No data for flow gage: '{loc_name}'!")
         return None
 
-    # remove flow close to zero and report the prob of flow=0
-    zero_flow = 0.001
-    i_temp = df.index=='3000-01-01'
-    i_zero = df[df[w]<zero_flow].index
-    for i in i_zero:
-        i_temp |= (df.index==i)
-    df = df[~i_temp]
-    df.loc[:,w] = np.log10(df.loc[:,w])
+    # # remove flow close to zero and report the prob of flow=0
+    # i_temp = df.index=='3000-01-01'
+    # i_zero = df[df[w]<ZERO_FLOW].index
+    # for i in i_zero:
+    #     i_temp |= (df.index==i)
+    # df = df[~i_temp]
     tempDF = pd.pivot_table(df, values=w, index='Date', columns='DataOrigin', aggfunc='max')
     tempDF['ModelPeriod'] = df.ModelPeriod[df.DataOrigin=='Simulated'].to_list()
 
@@ -271,7 +284,7 @@ def plotRegression1(df,FlowStationInfo):
         , va='top', ha='right', transform=g.ax_joint.transAxes
         , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
 
-    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.suptitle(loc_name, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
 
     fig1 = plt.gcf()
@@ -316,7 +329,7 @@ def plotRegression1(df,FlowStationInfo):
     g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
     g.ax_joint.minorticks_on()
     g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
-    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.suptitle(loc_name, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
     sns.move_legend(g.ax_joint, 'upper left')
 
@@ -324,14 +337,14 @@ def plotRegression1(df,FlowStationInfo):
     try:
         t1 = f"\nCalibration: "+r"$\log_{10}(y)$"+f" = {cal_intercept:.3f}{cal_slope:+.3f} "+r"$\log_{10}(x)$"
     except UnboundLocalError:
-        print(f"\033[91mEmpty Calibration: ({id}){staname}\033[0m", file=sys.stderr)
+        print(f"\033[91mEmpty Calibration: ({id}){loc_name}\033[0m", file=sys.stderr)
         t1 = ""
         cal_intercept = ""
         cal_slope = ""
     try:
         t2 = f"\n     Others: "+r"$\log_{10}(y)$"+f" = {ver_intercept:.3f}{ver_slope:+.3f} "+r"$\log_{10}(x)$"
     except UnboundLocalError:
-        print(f"\033[91mEmpty Verification: ({id}){staname}\033[0m", file=sys.stderr)
+        print(f"\033[91mEmpty Verification: ({id}){loc_name}\033[0m", file=sys.stderr)
         t2 = ""
         ver_intercept = ""
         ver_slope = ""
@@ -356,12 +369,11 @@ def plotRegression1(df,FlowStationInfo):
 
     return [fig1, fig2]
 
-def plot_hydrograph(df,FlowStationInfo):
+def plot_hydrograph(df,loc_name):
     w = df.columns.tolist()[0]
     id = int(w.replace('ID_',''))
-    staname = FlowStationInfo.loc[FlowStationInfo.FlowStationID==id,'StationName'].values[0]
     if len(df)==0:
-        print(f"No data for flow gage: '{staname}'!")
+        print(f"No data for flow gage: '{loc_name}'!")
         return None
 
     fig = plt.figure(figsize=(13.5, 9.75))
@@ -374,7 +386,7 @@ def plot_hydrograph(df,FlowStationInfo):
     plt.yscale('log')
     plt.grid(True, color='lightgray')
     plt.ylabel("Streamflow, cfs")
-    plt.title(staname)
+    plt.title(loc_name)
     plt.tight_layout()
 
     proj_dir = os.path.dirname(os.path.realpath(__file__))
@@ -385,22 +397,19 @@ def plot_hydrograph(df,FlowStationInfo):
 
     return fig
 
-def plotResidue(df,FlowStationInfo):
+def plotResidue(df,loc_name):
     w = df.columns.tolist()[0]
     id = int(w.replace('ID_',''))
-    staname = FlowStationInfo.loc[FlowStationInfo.FlowStationID==id,'StationName'].values[0]
     if len(df)==0:
-        print(f"No data for flow gage: '{staname}'!")
+        print(f"No data for flow gage: '{loc_name}'!")
         return None
 
     # remove flow close to zero and report the prob of flow=0
-    zero_flow = 0.001
-    i_temp = df.index=='3000-01-01'
-    i_zero = df[df[w]<zero_flow].index
-    for i in i_zero:
-        i_temp |= (df.index==i)
-    df = df[~i_temp]
-    df.loc[:,w] = np.log10(df.loc[:,w])
+    # i_temp = df.index=='3000-01-01'
+    # i_zero = df[df[w]<ZERO_FLOW].index
+    # for i in i_zero:
+    #     i_temp |= (df.index==i)
+    # df = df[~i_temp]
     tempDF = pd.pivot_table(df, values=w, index='Date', columns='DataOrigin', aggfunc='max')
     tempDF['ModelPeriod'] = df.ModelPeriod[df.DataOrigin=='Simulated'].to_list()
     tempDF['Diff'] = tempDF['Observed']-tempDF['Simulated']
@@ -444,7 +453,7 @@ def plotResidue(df,FlowStationInfo):
     g.ax_joint.set_xticks(new_ticks)
     g.ax_joint.set_xticklabels(labels)
 
-    g.figure.suptitle(staname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.suptitle(loc_name, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
     sns.move_legend(g.ax_joint, 'upper left')
     rmse = np.sqrt(np.mean(tempDF['Residue'] ** 2))
@@ -453,14 +462,14 @@ def plotResidue(df,FlowStationInfo):
         t1 = f"\nCalibration: y = {cal_intercept:.3f}{cal_slope:+.3f} "+r"$\log_{10}(x)$"
         rmse_cal = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Calibration', 'Residue'] ** 2))
     except UnboundLocalError:
-        # print(f"\033[91mEmpty Calibration: ({id}){sprname}\033[0m", file=sys.stderr)
+        # print(f"\033[91mEmpty Calibration: ({id}){loc_name}\033[0m", file=sys.stderr)
         t1 = ""
         rmse_cal = float('nan')
     try:
         t2 = f"\n     Others: y = {ver_intercept:.3f}{ver_slope:+.3f} "+r"$\log_{10}(x)$"
         rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
     except UnboundLocalError:
-        # print(f"\033[91mEmpty Verification: ({id}){sprname}\033[0m", file=sys.stderr)
+        # print(f"\033[91mEmpty Verification: ({id}){loc_name}\033[0m", file=sys.stderr)
         t2 = ""
         rmse_ver = float('nan')
     t3 = f"\n" + r"$Residue = x * (10^{y}-1)$" \
@@ -481,21 +490,19 @@ def plotResidue(df,FlowStationInfo):
 
 def get1WideTable(id,gf,need_weekly):
     # Wide format table
-    obs_ts = gf.getStreamflow_Table(id,'Obs',need_weekly,date_index=True)
+    obs_ts = gf.getStreamflow_Table(id,INTB_VERSION,'Obs',need_weekly,date_index=True)
+    obs_ts[obs_ts[f'ID_{id:02}']<ZERO_FLOW] = ZERO_FLOW
     obs_ts.rename(columns={f'ID_{id:02}':f'obs_{id:02}'},inplace=True)
-    sim_ts = gf.getStreamflow_Table(id,'Sim',need_weekly,date_index=True)
+    sim_ts = gf.getStreamflow_Table(id,INTB_VERSION,'Sim',need_weekly,date_index=True)
+    sim_ts[sim_ts[f'ID_{id:02}']<ZERO_FLOW] = ZERO_FLOW
     sim_ts.rename(columns={f'ID_{id:02}':f'sim_{id:02}'},inplace=True)
     df = sim_ts.join(obs_ts)
     del sim_ts, obs_ts
 
     df.index.name = 'Date'
     df['ModelPeriod'] = 'Others'
-    if INTB_VERSION==2:
-        df = df.loc[POA[1][0]:POA[1][1]]
-        df.loc[CAL_PERIOD[1][0]:CAL_PERIOD[1][1], 'ModelPeriod'] = 'Calibration'
-    else:
-        df = df.loc[POA[0][0]:POA[0][1]]
-        df.loc[CAL_PERIOD[0][0]:CAL_PERIOD[0][1], 'ModelPeriod'] = 'Calibration'
+    df = df.loc[POA[0]:POA[1]]
+    df.loc[CAL_PERIOD[0]:CAL_PERIOD[1], 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -556,44 +563,73 @@ def useMP_Pool():
     return rtnval
 
 def use_noMP():
-    rtnval = []
-    for id in flowIDs:
-        rtnval += plot_MP(id,gf,need_weekly)
-    return rtnval
+    return [plot_MP(id,gf,need_weekly) for id in flowIDs]
+
+def move_result():
+    import shutil
+    # zip plotWarehouse directory (holding graphic images and pdf files) and move to the result directory
+    prefix = os.path.basename(__file__).split('_')[0]
+    result_dir = os.path.join(os.path.dirname(proj_dir),f'INTB{INTB_VERSION}_EDA results')
+    shutil.make_archive(
+        os.path.join(result_dir,f'{prefix}_plotWarehouse')
+        , 'zip', os.path.join(proj_dir,'plotWarehouse')
+    )
+
+    # move csv file
+    filename = f'{prefix}_{FILE_REGRESSION_PARAMS}'
+    shutil.move(os.path.join(proj_dir, FILE_REGRESSION_PARAMS), os.path.join(result_dir, filename))
+
+    # move merged pdf file
+    filename = 'all_plots.pdf'
+    shutil.move(os.path.join(proj_dir, filename), os.path.join(result_dir, f'{prefix}_{filename}'))
 
 
 if __name__ == '__main__':
+    from image2pdf import merge_pdf
     # from memory_profiler import memory_usage
+
     need_weekly = True
     sns.set_theme(style="darkgrid")
-    plt.rcParams.update({'font.size': 8, 'savefig.dpi': 300}) 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
-    if INTB_VERSION==2:
-        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
-    else:
-        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB_403')
+    plt.rcParams.update({'font.size': 8, 'savefig.dpi': 300})
+
+    proj_dir = os.path.dirname(__file__)
+    run_dir  = os.path.join(os.path.dirname(proj_dir),RUN_DIRNAME)
 
     # Perform EDA for Streamflow
-    gf = GetFlow(run_dir)
+    gf = GetFlow(run_dir,INTB_VERSION)
     flowinfo = gf.FlowStationInfo
     # flowinfo = flowinfo.iloc[flowinfo.UseInCalibration==True,:]
     flowIDs = flowinfo.FlowStationID.to_list()
-    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
-        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
+
+    # merge_pdf(proj_dir)
+    # move_result()
 
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
-        # flowIDs = [i for i in flowIDs if i not in [18,21]]
-        flowIDs = [
-            # 2,  # HILLS ABOVE CRYSTAL SPRINGS
-            # 6,  # HILLS R AT MORRIS BRIDGE
-            # 22, # ANCLOTE R NR ELFERS
-            24, # PITHLA R NR NEW PT RICHEY 
-            74]
+        flowIDs = [i for i in flowIDs if i not in [18,21]]
+        # flowIDs = [
+        #     # 2,  # HILLS ABOVE CRYSTAL SPRINGS
+        #     # 6,  # HILLS R AT MORRIS BRIDGE
+        #     # 22, # ANCLOTE R NR ELFERS
+        #     # 24, # PITHLA R NR NEW PT RICHEY 
+        #     74]
+        
     else:
         use_mp = 'useMP_Queue'
-        flowIDs = [i for i in flowIDs if i not in [18,21]]
+        if INTB_VERSION==2:
+            flowIDs = [i for i in flowIDs if i not in [18,21]]
+        else:
+            flowIDs = [i for i in flowIDs if i not in [18,21,74]]
+        plotWarehouse = os.path.join(proj_dir,'plotWarehouse')
+        for f in os.listdir(plotWarehouse):
+            try:
+                os.remove(os.path.join(plotWarehouse,f))
+            except OSError as err:
+                print(err)
+
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
+        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
 
     start_time = datetime.now()
     if use_mp=='useMP_Queue':
@@ -606,13 +642,15 @@ if __name__ == '__main__':
 
     etime = datetime.now()-start_time
     print(f'Elasped time: {etime}')
-    if IS_DEBUGGING:
-        plt.show()
 
     # print('Memory usage (in chunks of .1 seconds): %s' % mem_usage)
     # print('Maximum memory usage: %s' % max(mem_usage))
 
-    # merge pdf files
-    from image2pdf import merge_pdf
-    merge_pdf(proj_dir)
+    if IS_DEBUGGING:
+        plt.show()
+    else:
+        # merge pdf files
+        merge_pdf(proj_dir)
+        move_result()
+
     exit(0)

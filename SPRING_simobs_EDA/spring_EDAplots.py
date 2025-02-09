@@ -8,23 +8,38 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import LoadData as ld
 from LoadData import GetFlow
+import yaml
 
-IS_DEBUGGING = False
-FILE_REGRESSION_PARAMS = r"spring_regression_params.csv"
-MAX_NUM_PROCESSES = 10
-FIG_TITLE_FONTSIZE = 12
-TITLE_FONTSIZE = 10
-AX_LABEL_FONTSIZE = 8
+ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_FILE = os.path.join(ROOT_DIR,'config.yaml')
+with open(CONFIG_FILE, 'r') as file:
+    try:
+        CONFIG = yaml.safe_load(file)
+    except yaml.YAMLError as e:
+        print(f"\033[91mError parsing YAML file: {e}\033[0m", file=sys.stderr)
+        CONFIG = None
 
-INTB_VERSION = 1
-POA = [
-    ['1989-01-01','2006-12-31'],
-    ['1995-01-01','2006-12-31'],
-    ] # Period of Analysis [INTB1,INTB2]
-CAL_PERIOD = [
-    ['1989-01-01','1998-12-31'],
-    ['1996-01-01','2001-12-31'],
-    ]
+IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
+MAX_NUM_PROCESSES = CONFIG['general']['MAX_NUM_PROCESSES']
+INTB_VERSION = CONFIG['general']['INTB_VERSION']
+FILE_REGRESSION_PARAMS = CONFIG['general']['FILE_REGRESSION_PARAMS']
+
+FIG_TITLE_FONTSIZE = CONFIG['plotting']['FIG_TITLE_FONTSIZE']
+TITLE_FONTSIZE = CONFIG['plotting']['TITLE_FONTSIZE']
+AX_LABEL_FONTSIZE = CONFIG['plotting']['AX_LABEL_FONTSIZE']
+
+if INTB_VERSION==1:
+    # Period of Analysis INTB1
+    POA = [CONFIG['INTB1']['POA_sdate'],CONFIG['INTB1']['POA_edate']]
+    # Calibration period INTB1
+    CAL_PERIOD = [CONFIG['INTB1']['CAL_PERIOD_sdate'],CONFIG['INTB1']['CAL_PERIOD_edate']]
+    RUN_DIRNAME = CONFIG['INTB1']['RUN_DIRNAME']
+else:
+    # Period of Analysis INTB1
+    POA = [CONFIG['INTB2']['POA_sdate'],CONFIG['INTB2']['POA_edate']]
+    # Calibration period INTB1
+    CAL_PERIOD = [CONFIG['INTB2']['CAL_PERIOD_sdate'],CONFIG['INTB2']['CAL_PERIOD_edate']]
+    RUN_DIRNAME = CONFIG['INTB2']['RUN_DIRNAME']
 
 
 def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
@@ -35,10 +50,11 @@ def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
         print(f"No data for SpringID = '{id}'!")
         return None
 
-    fig = [plot_hydrograph(df,gf.SpringInfo)] \
-        + [plotRegression1(df,gf.SpringInfo)] \
-        + [plotResidue(df,gf.SpringInfo)] \
-        + [plotHist(df,gf.SpringInfo)]
+    sprname = gf.SpringInfo.loc[gf.SpringInfo.SpringID==id,'SpringName'].values[0]
+    fig = [plot_hydrograph(df,sprname)] \
+        + [plotRegression1(df,sprname)] \
+        + [plotResidue(df,sprname)] \
+        + [plotHist(df,sprname)]
     if sema is not None:
         sema.release()
 
@@ -49,10 +65,9 @@ def plot_MP(id,gf,need_weekly=False,q=None,sema=None):
 
     return fig
 
-def plotHist(df,SpringInfo):
+def plotHist(df,loc_name):
     w = df.columns.tolist()[0]
     id = int(w.replace('ID_',''))
-    sprname = SpringInfo.loc[SpringInfo.SpringID==id,'SpringName'].values[0]
     if len(df)==0:
         print(f"No data for '{w}'!")
         return None
@@ -61,21 +76,8 @@ def plotHist(df,SpringInfo):
     sns.set_theme(style="darkgrid")
     axes = {n: fig.add_subplot(2, 2, n) for n in range(1,5)}
 
-    # remove flow close to zero and report the prob of flow=0
-    zero_flow = 0.001
-    i_obs = df['DataOrigin']=='Observed'
-    i_obs0 = (df[w]<zero_flow) & i_obs
-    n_obs0 = sum(i_obs0)
-    if n_obs0>0:
-        df = df.loc[~i_obs0]
-    i_sim = df['DataOrigin']=='Simulated'
-    i_sim0 = (df[w]<zero_flow) & i_sim
-    n_sim0 = sum(i_sim0)
-    if n_sim0>0:
-        df = df.loc[~i_sim0]
-
     sns.histplot(data=df, x=w, hue="DataOrigin", element="step", kde=True, ax=axes[1])
-    axes[1].set_title(f"Compare Histograms of '{sprname}'", fontsize=TITLE_FONTSIZE)
+    axes[1].set_title(f"Compare Histograms of '{loc_name}'", fontsize=TITLE_FONTSIZE)
     axes[1].set_ylabel("Count", fontsize=AX_LABEL_FONTSIZE)
     
     # if Target!=None:
@@ -88,7 +90,7 @@ def plotHist(df,SpringInfo):
     sns.ecdfplot(data=df, x=w, hue="DataOrigin", ax=axes[2])
     # sns.lineplot(x=[Target,Target], y=[0,1], ax=axes[2],
     #     linestyle='--', color='black', linewidth=1) #, label='Target')
-    axes[2].set_title(f"Compare CDF of '{sprname}'", fontsize=TITLE_FONTSIZE)
+    axes[2].set_title(f"Compare CDF of '{loc_name}'", fontsize=TITLE_FONTSIZE)
     axes[2].set_ylabel("Probability", fontsize=AX_LABEL_FONTSIZE)
 
     sns.boxplot(data=df, x=w, hue="DataOrigin", ax=axes[3])
@@ -96,10 +98,10 @@ def plotHist(df,SpringInfo):
         r, g, b, a = patch.get_facecolor()
         patch.set_facecolor((r, g, b, 0.5))
     # sns.despine(offset=10, trim=True, ax=axes[0, 1])
-    axes[3].set_title(f"Boxplot of '{sprname}'", fontsize=TITLE_FONTSIZE)
+    axes[3].set_title(f"Boxplot of '{loc_name}'", fontsize=TITLE_FONTSIZE)
 
     sns.violinplot(data=df, x=w, hue="DataOrigin", ax=axes[4], split=True, inner="quart", fill=False)
-    axes[4].set_title(f"Violin Plot of Histograms for '{sprname}'", fontsize=TITLE_FONTSIZE)
+    axes[4].set_title(f"Violin Plot of Histograms for '{loc_name}'", fontsize=TITLE_FONTSIZE)
     axes[4].set_ylabel("Probability", fontsize=AX_LABEL_FONTSIZE)
 
     for k in range(1,5):
@@ -179,21 +181,13 @@ def plotRegression0(df):
     # plt.close()
     return fig
 
-def plotRegression1(df,SpringInfo):
+def plotRegression1(df,loc_name):
     w = df.columns.tolist()[0]
     id = int(w.replace('ID_',''))
-    sprname = SpringInfo.loc[SpringInfo.SpringID==id,'SpringName'].values[0]
     if len(df)==0:
-        print(f"No data for Spring gage: '{sprname}'!")
+        print(f"No data for Spring gage: '{loc_name}'!")
         return None
 
-    # remove flow close to zero and report the prob of flow=0
-    zero_flow = 0.001
-    i_temp = df.index=='3000-01-01'
-    i_zero = df[df[w]<zero_flow].index
-    for i in i_zero:
-        i_temp |= (df.index==i)
-    df = df[~i_temp]
     tempDF = pd.pivot_table(df, values=w, index='Date', columns='DataOrigin', aggfunc='max')
     tempDF['ModelPeriod'] = df.ModelPeriod[df.DataOrigin=='Simulated'].to_list()
 
@@ -222,7 +216,7 @@ def plotRegression1(df,SpringInfo):
         , va='top', ha='right', transform=g.ax_joint.transAxes
         , fontsize=TITLE_FONTSIZE, bbox=dict(facecolor='white', alpha=1), ma='left')
 
-    g.figure.suptitle(sprname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.suptitle(loc_name, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
 
     fig1 = plt.gcf()
@@ -261,7 +255,7 @@ def plotRegression1(df,SpringInfo):
     g.ax_joint.tick_params(axis='both', labelsize=(AX_LABEL_FONTSIZE-1))
     g.ax_joint.minorticks_on()
     g.ax_joint.tick_params(axis='both', which='minor', length=4, color='gray')
-    g.figure.suptitle(sprname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.suptitle(loc_name, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
     sns.move_legend(g.ax_joint, 'upper left')
 
@@ -269,14 +263,14 @@ def plotRegression1(df,SpringInfo):
     try:
         t1 = f"\nCalibration: y = {cal_intercept:.3f}{cal_slope:+.3f}x"
     except UnboundLocalError:
-        print(f"\033[91mEmpty Calibration: ({id}){sprname}\033[0m", file=sys.stderr)
+        print(f"\033[91mEmpty Calibration: ({id}){loc_name}\033[0m", file=sys.stderr)
         t1 = ""
         cal_intercept = ""
         cal_slope = ""
     try:
         t2 = f"\n     Others: y = {ver_intercept:.3f}{ver_slope:+.3f}x"
     except UnboundLocalError:
-        print(f"\033[91mEmpty Verification: ({id}){sprname}\033[0m", file=sys.stderr)
+        print(f"\033[91mEmpty Verification: ({id}){loc_name}\033[0m", file=sys.stderr)
         t2 = ""
         ver_intercept = ""
         ver_slope = ""
@@ -301,10 +295,8 @@ def plotRegression1(df,SpringInfo):
 
     return [fig1, fig2]
 
-def plot_hydrograph(df,SpringInfo):
+def plot_hydrograph(df,loc_name):
     w = df.columns.tolist()[0]
-    id = int(w.replace('ID_',''))
-    sprname = SpringInfo.loc[SpringInfo.SpringID==id,'SpringName'].values[0]
     if len(df)==0:
         print(f"No data for '{w}'!")
         return None
@@ -318,7 +310,7 @@ def plot_hydrograph(df,SpringInfo):
 
     plt.grid(True, color='lightgray')
     plt.ylabel("Springflow, cfs")
-    plt.title(sprname)
+    plt.title(loc_name)
     plt.tight_layout()
 
     proj_dir = os.path.dirname(os.path.realpath(__file__))
@@ -329,21 +321,12 @@ def plot_hydrograph(df,SpringInfo):
 
     return fig
 
-def plotResidue(df,SpringInfo):
+def plotResidue(df,loc_name):
     w = df.columns.tolist()[0]
-    id = int(w.replace('ID_',''))
-    sprname = SpringInfo.loc[SpringInfo.SpringID==id,'SpringName'].values[0]
     if len(df)==0:
-        print(f"No data for Spring gage: '{sprname}'!")
+        print(f"No data for Spring gage: '{loc_name}'!")
         return None
 
-    # remove flow close to zero and report the prob of flow=0
-    zero_flow = 0.001
-    i_temp = df.index=='3000-01-01'
-    i_zero = df[df[w]<zero_flow].index
-    for i in i_zero:
-        i_temp |= (df.index==i)
-    df = df[~i_temp]
     tempDF = pd.pivot_table(df, values=w, index='Date', columns='DataOrigin', aggfunc='max')
     tempDF['ModelPeriod'] = df.ModelPeriod[df.DataOrigin=='Simulated'].to_list()
     tempDF['Residue'] = tempDF['Observed']-tempDF['Simulated']
@@ -377,7 +360,7 @@ def plotResidue(df,SpringInfo):
     g.ax_marg_x.grid(color='lightgray')
     g.ax_marg_y.grid(color='lightgray')
 
-    g.figure.suptitle(sprname, weight='bold', size=FIG_TITLE_FONTSIZE)
+    g.figure.suptitle(loc_name, weight='bold', size=FIG_TITLE_FONTSIZE)
     g.figure.subplots_adjust(top=0.95)
     sns.move_legend(g.ax_joint, 'upper left')
 
@@ -387,14 +370,14 @@ def plotResidue(df,SpringInfo):
         t1 = f"\nCalibration: y = {cal_intercept:.3f}{cal_slope:+.3f}x"
         rmse_cal = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Calibration', 'Residue'] ** 2))
     except UnboundLocalError:
-        # print(f"\033[91mEmpty Calibration: ({id}){sprname}\033[0m", file=sys.stderr)
+        # print(f"\033[91mEmpty Calibration: ({id}){loc_name}\033[0m", file=sys.stderr)
         t1 = ""
         rmse_cal = float('nan')
     try:
         t2 = f"\n     Others: y = {ver_intercept:.3f}{ver_slope:+.3f}x"
         rmse_ver = np.sqrt(np.mean(tempDF.loc[tempDF.ModelPeriod=='Others' , 'Residue'] ** 2))
     except UnboundLocalError:
-        # print(f"\033[91mEmpty Verification: ({id}){sprname}\033[0m", file=sys.stderr)
+        # print(f"\033[91mEmpty Verification: ({id}){loc_name}\033[0m", file=sys.stderr)
         t2 = ""
         rmse_ver = float('nan')
     t3 = f"\nRMSE[Cal,Ver,All] = [{rmse_cal:.2f}, {rmse_ver:.2f}, {rmse:.2f}]"
@@ -414,21 +397,17 @@ def plotResidue(df,SpringInfo):
 
 def get1WideTable(id,gf,need_weekly):
     # Wide format table
-    obs_ts = gf.getSpringflow_Table(id,'Obs',need_weekly,date_index=True)
+    obs_ts = gf.getSpringflow_Table(id,INTB_VERSION,'Obs',need_weekly,date_index=True)
     obs_ts.rename(columns={f'ID_{id:02}':f'obs_{id}'},inplace=True)
-    sim_ts = gf.getSpringflow_Table(id,'Sim',need_weekly,date_index=True)
+    sim_ts = gf.getSpringflow_Table(id,INTB_VERSION,'Sim',need_weekly,date_index=True)
     sim_ts.rename(columns={f'ID_{id:02}':f'sim_{id}'},inplace=True)
     df = sim_ts.join(obs_ts)
     del sim_ts, obs_ts
 
     df.index.name = 'Date'
     df['ModelPeriod'] = 'Others'
-    if INTB_VERSION==2:
-        df = df.loc[POA[1][0]:POA[1][1]]
-        df.loc[CAL_PERIOD[1][0]:CAL_PERIOD[1][1], 'ModelPeriod'] = 'Calibration'
-    else:
-        df = df.loc[POA[0][0]:POA[0][1]]
-        df.loc[CAL_PERIOD[0][0]:CAL_PERIOD[0][1], 'ModelPeriod'] = 'Calibration'
+    df = df.loc[POA[0]:POA[1]]
+    df.loc[CAL_PERIOD[0]:CAL_PERIOD[1], 'ModelPeriod'] = 'Calibration'
     '''
     if not df.loc['2007-10-01':'2013-09-30'].empty:
         df.loc['2007-10-01':'2013-09-30', 'RA_Period'] = 'First six years'
@@ -489,31 +468,46 @@ def useMP_Pool():
     return rtnval
 
 def use_noMP():
-    rtnval = []
-    for id in springIDs:
-        rtnval += plot_MP(id,gf,need_weekly)
-    return rtnval
+    return [plot_MP(id,gf,need_weekly) for id in springIDs]
+
+def move_result():
+    import shutil
+    # zip plotWarehouse directory (holding graphic images and pdf files) and move to the result directory
+    prefix = os.path.basename(__file__).split('_')[0]
+    result_dir = os.path.join(os.path.dirname(proj_dir),f'INTB{INTB_VERSION}_EDA results')
+    shutil.make_archive(
+        os.path.join(result_dir,f'{prefix}_plotWarehouse')
+        , 'zip', os.path.join(proj_dir,'plotWarehouse')
+    )
+
+    # move csv file
+    filename = f'{prefix}_{FILE_REGRESSION_PARAMS}'
+    shutil.move(os.path.join(proj_dir, FILE_REGRESSION_PARAMS), os.path.join(result_dir, filename))
+
+    # move merged pdf file
+    filename = 'all_plots.pdf'
+    shutil.move(os.path.join(proj_dir, filename), os.path.join(result_dir, f'{prefix}_{filename}'))
 
 
 if __name__ == '__main__':
+    from image2pdf import merge_pdf
     # from memory_profiler import memory_usage
+
     need_weekly = True
     sns.set_theme(style="darkgrid")
-    plt.rcParams.update({'font.size': 8}) 
-    proj_dir = os.path.dirname(os.path.realpath(__file__))
-    if INTB_VERSION==2:
-        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB2_bp424')
-    else:
-        run_dir  = os.path.join(os.path.dirname(proj_dir),'INTB_403')
+    plt.rcParams.update({'font.size': 8, 'savefig.dpi': 300})
+
+    proj_dir = os.path.dirname(__file__)
+    run_dir  = os.path.join(os.path.dirname(proj_dir),RUN_DIRNAME)
 
     # Perform EDA for Springflow
-    gf = GetFlow(run_dir,is_river=False)
+    gf = GetFlow(run_dir,INTB_VERSION,is_river=False)
     springinfo = gf.SpringInfo
     # springinfo = springinfo.iloc[springinfo.UseInCalibration==True,:]
     springIDs = [i for i in springinfo.SpringID.to_list() if i not in [6,8,9,11]]
 
-    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
-        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
+    # merge_pdf(proj_dir)
+    # move_result()
 
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
@@ -521,6 +515,15 @@ if __name__ == '__main__':
         springIDs = [2,3,4]
     else:
         use_mp = 'useMP_Queue'
+        plotWarehouse = os.path.join(proj_dir,'plotWarehouse')
+        for f in os.listdir(plotWarehouse):
+            try:
+                os.remove(os.path.join(plotWarehouse,f))
+            except OSError as err:
+                print(err)
+
+    with open(os.path.join(proj_dir,FILE_REGRESSION_PARAMS), "w") as f:
+        f.write(f"ID,Cal_Slope,Cal_Intercept,Ver_Slope,Ver_Intercept,Slope,Intercept\n") 
 
     start_time = datetime.now()
     if use_mp=='useMP_Queue':
@@ -533,13 +536,14 @@ if __name__ == '__main__':
 
     etime = datetime.now()-start_time
     print(f'Elasped time: {etime}')
-    if IS_DEBUGGING:
-        plt.show()
 
     # print('Memory usage (in chunks of .1 seconds): %s' % mem_usage)
     # print('Maximum memory usage: %s' % max(mem_usage))
 
-    # merge pdf files
-    from image2pdf import merge_pdf
-    merge_pdf(proj_dir)
+    if IS_DEBUGGING:
+        plt.show()
+    else:
+        # merge pdf files
+        merge_pdf(proj_dir)
+        move_result()
     exit(0)

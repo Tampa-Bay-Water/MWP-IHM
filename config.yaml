@@ -1,0 +1,33 @@
+general:
+  IS_DEBUGGING: False
+  MAX_NUM_PROCESSES: 10
+  INTB_VERSION: 2
+  ZERO_FLOW: 1.
+  FILE_REGRESSION_PARAMS: 'regression_params.csv'
+
+plotting:
+  FIG_TITLE_FONTSIZE: 12
+  TITLE_FONTSIZE: 10
+  AX_LABEL_FONTSIZE: 8
+
+INTB1:
+  RUN_DIRNAME: INTB_403
+
+  # Period of Analysis INTB1
+  POA_sdate: '1989-01-01'
+  POA_edate: '2006-12-31'
+
+  # Calibration period INTB1
+  CAL_PERIOD_sdate: '1989-01-01'
+  CAL_PERIOD_edate: '1998-12-31'
+
+INTB2:
+  RUN_DIRNAME: INTB2_bp424
+
+  # Period of Analysis INTB2
+  POA_sdate: '1995-01-01'
+  POA_edate: '2006-12-31'
+
+  # Calibration period INTB2
+  CAL_PERIOD_sdate: '1996-01-01'
+  CAL_PERIOD_edate: '2001-12-31'

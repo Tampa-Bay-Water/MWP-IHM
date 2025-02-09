@@ -13,7 +13,8 @@ import re
 is_Windows = os.name=='nt'
 owinfo_sql = f'''
     SELECT PointID,A.PointName,WFCode,CTSID,SiteID,INTB_OWID,[Name],A.CellID,LayerNumber
-        ,Target,TargetType,NewLandElevation-Topo SurfEl2CellTopoOffset
+        ,Target,TargetType
+        ,CASE WHEN LayerNumber=1 THEN NewLandElevation-Topo ELSE 0. END SurfEl2CellTopoOffset
     FROM (
         SELECT PointID,PointName,'OROP CP' PermitType,WFCode,CTSID,SiteID,CellID,INTB_OWID
         FROM [MWP_CWF].[dbo].[OROP_SASwells]
@@ -45,7 +46,7 @@ def get_DBconn():
         sv = 'localhost'
         db = 'MWP_CWF'
         conn = pyodbc.connect(
-            f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes',autocommit=True)
+            f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes;timeout=30;"',autocommit=True)
         # params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes")
         # engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
         # conn = engine.connect()
@@ -60,7 +61,9 @@ def get_DBconn():
         )
         # params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};DATABASE={db};UID=SA;PWD={pw}")
         # engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
-        # conn = engine.connect()       
+        # conn = engine.connect() 
+
+    conn.timeout = 15
     return conn
 
 
@@ -103,7 +106,7 @@ class ReadHead:
     '''
     def get_DBconn(self):
         warnings.simplefilter(action='ignore', category=UserWarning)
-        if self.is_Windows:
+        if is_Windows:
             dv = '{SQL Server}'
             sv = 'vgridfs'
             db = 'MWP_CWF'
@@ -306,7 +309,6 @@ class LoadObservedHead:
 
         # modify table
         self.owinfo_df.loc[self.owinfo_df.PointName=='WRW-s','LayerNumber'] = 3 # simulation has no SAS
-        self.owinfo_df.loc[self.owinfo_df.PointName=='RMP-8D1','SurfEl2CellTopoOffset'] = 1.799998
 
         conn.close()
 
@@ -341,7 +343,7 @@ class LoadObservedHead:
                 ) A
                 INNER JOIN [INTB2_Input].[dbo].[ObservedWell] OW ON OW.ObservedWellID=A.INTB_OWID
                 INNER JOIN [INTB2_Input].[dbo].[ObservedWellTimeSeries] OWTS ON OW.ObservedWellID=OWTS.ObservedWellID
-                WHERE PointName in {owStrList1}
+                WHERE PointName in {owStrList1} AND OWTS.Deleted=0
             ) A PIVOT (avg([Value]) FOR PointName in ({owStrList2})) P
             ORDER BY [Date]
         ''',conn)
@@ -377,11 +379,11 @@ class LoadObservedHead:
 class GetFlow:
     # Get INTB2 flow data
 
-    def __init__(self,run_dir,is_river=True):
+    def __init__(self, run_dir, intb_version, is_river=True):
         self.run_dir = run_dir.replace('/Volumes/Mac_xSSD','/mnt')
         self.fname = os.path.join(run_dir,'PEST_Run','ReachHistory.csv')
         self.dbin = 'INTB2_Input'
-        self.dbout = 'INTB_Output'
+        self.dbout = f'INTB{intb_version}_Output'
         conn = self.get_DBconn()
         with conn.cursor() as cur:
             cur.execute(f'''
@@ -422,17 +424,28 @@ class GetFlow:
     def get_DBconn(self):
         return get_DBconn()
 
-    def getStreamflow_Table(self,stationIDs,SorceOrigin='Sim',need_weekly=False,date_index=True,por=None):
+    def getStreamflow_Table(self, stationIDs, intb_version
+            , SorceOrigin='Sim', need_weekly=False, date_index=True, por=None):
         if type(stationIDs) is not list:
             stationIDs = [stationIDs]
         stalist = str(stationIDs).replace('[','(').replace(']',')')
         idlist = str([f"ID_{i:02}" for i in stationIDs]).replace('[','').replace(']','').replace("'","")
 
         if SorceOrigin=='Sim':
-            db_source = 'INTB_Output.dbo.StreamflowTS'
+            db_source = f'INTB{intb_version}_Output.dbo.StreamflowTS'
+            deleted = ''
+            # '''
+            #     SELECT a.Date, b.FlowStationId,
+            #         SUM((a.ROVOL*43560.0)/86400.0 * b.ScaleFactor) Value
+            #     FROM OPENROWSET(BULK '/home/MWP-IHM/INTB2_bp424/PEST_Run/ReachHistory.csv'
+            #         , FORMATFILE='/home/MWP-IHM/BCP_format/ReachHistory_format.xml', FIRSTROW=2) as a
+            #     INNER JOIN INTB2_Input.dbo.ReachFlowStation b ON b.ReachID = a.ReachID
+            #     GROUP BY a.Date, b.FlowStationId
+            # '''
         else:
             db_source = 'INTB2_Input.dbo.FlowStationTimeseries'
-            
+            deleted = 'and Deleted=0'
+        
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
         else:
@@ -443,7 +456,7 @@ class GetFlow:
             select Date,{idlist}{weekstart} from (
             select Date,'ID_'+right(left(cast(FlowStationID/100. as varchar),4),2) StaID,Value
             from {db_source}
-            where FlowStationID in {stalist}
+            where FlowStationID in {stalist} {deleted}
             ) A pivot (AVG(Value) for StaID in ({idlist})) B
             order by Date
         """,conn)
@@ -459,15 +472,18 @@ class GetFlow:
             df.set_index('Date', inplace=True)
         return df
     
-    def getStreamflow_Vector(self,stationIDs,SorceOrigin='Sim',need_weekly=False,date_index=True,por=None):
+    def getStreamflow_Vector(self, stationIDs, SorceOrigin='Sim', need_weekly=False, date_index=True, por=None
+            , intb_version=2):
         if type(stationIDs) is not list:
             stationIDs = [stationIDs]
         stalist = str(stationIDs).replace('[','(').replace(']',')')
 
         if SorceOrigin=='Sim':
-            db_source = 'INTB_Output.dbo.StreamflowTS'
+            db_source = f'INTB{intb_version}_Output.dbo.StreamflowTS'
+            deleted = ''
         else:
             db_source = 'INTB2_Input.dbo.FlowStationTimeseries'
+            deleted = 'and Deleted=0'
 
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
@@ -478,7 +494,7 @@ class GetFlow:
         df = pd.read_sql(f"""
             select Date,'ID_'+right(left(cast(FlowStationID/100. as varchar),4),2) StaID,Value{weekstart}
             from {db_source}
-            where FlowStationID in {stalist}
+            where FlowStationID in {stalist} {deleted}
             order by FlowStationID,Date
         """,conn)
         conn.close()
@@ -492,16 +508,25 @@ class GetFlow:
             df.set_index(['Date','StaID'], inplace=True)
         return df
 
-    def getSpringflow_Table(self,springIDs,SorceOrigin='Sim',need_weekly=False,date_index=True,por=None):
+    def getSpringflow_Table(self, springIDs, intb_version
+            , SorceOrigin='Sim', need_weekly=False, date_index=True, por=None):
         if type(springIDs) is not list:
             springIDs = [springIDs]
         stalist = str(springIDs).replace('[','(').replace(']',')')
         idlist = str([f"ID_{i:02}" for i in springIDs]).replace('[','').replace(']','').replace("'","")
 
         if SorceOrigin=='Sim':
-            db_source = 'INTB_Output.dbo.SpringflowTS'
+            db_source = f'INTB{intb_version}_Output.dbo.SpringflowTS'
+            deleted = ''
+            # '''
+            #     select CAST(a.Date as DATE) Date, b.SpringId SpringID, a.ROVOL*43560.0/86400.0 Value
+            #     FROM OPENROWSET(BULK '/home/MWP-IHM/INTB2_bp424/PEST_Run/ReachHistory.csv'
+            #         , FORMATFILE='/home/MWP-IHM/BCP_format/ReachHistory_format.xml', FIRSTROW=2) as a
+            #     INNER JOIN INTB2_Input.dbo.Spring b ON b.ReachID = a.ReachID
+            # '''
         else:
             db_source = 'INTB2_Input.dbo.ObservedSpringTimeSeries'
+            deleted = 'and Deleted=0'
             
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
@@ -513,7 +538,7 @@ class GetFlow:
             select Date,{idlist}{weekstart} from (
             select Date,'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID,Value
             from {db_source}
-            where SpringID in {stalist}
+            where SpringID in {stalist} {deleted}
             ) A pivot (AVG(Value) for SprID in ({idlist})) B
             order by Date
         """,conn)
@@ -529,15 +554,18 @@ class GetFlow:
             df.set_index('Date', inplace=True)
         return df
     
-    def getSpringflow_Vector(self,springIDs,SorceOrigin='Sim',need_weekly=False,date_index=True,por=None):
+    def getSpringflow_Vector(self, springIDs, intb_version
+            , SorceOrigin='Sim', need_weekly=False, date_index=True, por=None):
         if type(springIDs) is not list:
             springIDs = [springIDs]
         stalist = str(springIDs).replace('[','(').replace(']',')')
 
         if SorceOrigin=='Sim':
-            db_source = 'INTB_Output.dbo.SpringflowTS'
+            db_source = f'INTB{intb_version}_Output.dbo.SpringflowTS'
+            deleted = ''
         else:
             db_source = 'INTB2_Input.dbo.ObservedSpringTimeSeries'
+            deleted = 'and Deleted=0'
 
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
@@ -548,7 +576,7 @@ class GetFlow:
         df = pd.read_sql(f"""
             select Date,'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID,Value{weekstart}
             from {db_source}
-            where SpringID in {stalist}
+            where SpringID in {stalist} {deleted}
             order by SpringID,Date
         """,conn)
         conn.close()
