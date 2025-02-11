@@ -52,7 +52,7 @@ INNER JOIN OPENROWSET( BULK '/mnt/IHM/INTB2_bp424/PEST_RunPlus/RivercellHistory.
 WHERE WF.IsChannel=1
 ORDER BY P.PolygonID,WF.WaterbodyFragmentID,R.LayerNumber
 
---- Update HullHistoryCell table to rerun INTB2
+--- Update FullHistoryCell table to rerun INTB2
 insert into [C:\RUN\IHM\BP424_19892006\INTB2_INPUT.MDF].[dbo].[FullHistoryCell]
 values
 	(101131, 'Crystal Springs diffuse flow', 101131),

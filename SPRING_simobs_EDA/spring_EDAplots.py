@@ -19,7 +19,11 @@ with open(CONFIG_FILE, 'r') as file:
         print(f"\033[91mError parsing YAML file: {e}\033[0m", file=sys.stderr)
         CONFIG = None
 
-IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
+if ('debugpy' in sys.modules and sys.modules['debugpy'].__file__.find('/.vscode/extensions/') > -1):
+    IS_DEBUGGING = True
+else:
+    IS_DEBUGGING = False
+# IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
 MAX_NUM_PROCESSES = CONFIG['general']['MAX_NUM_PROCESSES']
 INTB_VERSION = CONFIG['general']['INTB_VERSION']
 FILE_REGRESSION_PARAMS = CONFIG['general']['FILE_REGRESSION_PARAMS']
@@ -397,9 +401,9 @@ def plotResidue(df,loc_name):
 
 def get1WideTable(id,gf,need_weekly):
     # Wide format table
-    obs_ts = gf.getSpringflow_Table(id,INTB_VERSION,'Obs',need_weekly,date_index=True)
+    obs_ts = gf.getSpringflow_Table(id,'Obs',need_weekly,date_index=True)
     obs_ts.rename(columns={f'ID_{id:02}':f'obs_{id}'},inplace=True)
-    sim_ts = gf.getSpringflow_Table(id,INTB_VERSION,'Sim',need_weekly,date_index=True)
+    sim_ts = gf.getSpringflow_Table(id,'Sim',need_weekly,date_index=True)
     sim_ts.rename(columns={f'ID_{id:02}':f'sim_{id}'},inplace=True)
     df = sim_ts.join(obs_ts)
     del sim_ts, obs_ts

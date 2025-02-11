@@ -37,6 +37,7 @@ owinfo_sql = f'''
     WHERE INTB_OWID IS NOT NULL
     ORDER BY WFCode,PointName
 '''
+HILLS_R_BL_Crystal_ID = 74
 
 def get_DBconn():
     import urllib
@@ -46,7 +47,7 @@ def get_DBconn():
         sv = 'localhost'
         db = 'MWP_CWF'
         conn = pyodbc.connect(
-            f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes;timeout=30;"',autocommit=True)
+            f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes;timeout=60;"',autocommit=True)
         # params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes")
         # engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
         # conn = engine.connect()
@@ -63,9 +64,8 @@ def get_DBconn():
         # engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
         # conn = engine.connect() 
 
-    conn.timeout = 15
+    conn.timeout = 1200
     return conn
-
 
 class ReadHead:
     # Read head from MODFLOW binary data file
@@ -102,27 +102,6 @@ class ReadHead:
 
     def get_DBconn(self):
         return get_DBconn()
-    
-    '''
-    def get_DBconn(self):
-        warnings.simplefilter(action='ignore', category=UserWarning)
-        if is_Windows:
-            dv = '{SQL Server}'
-            sv = 'vgridfs'
-            db = 'MWP_CWF'
-            conn = pyodbc.connect(
-                f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes',autocommit=True)
-        else:
-            dv = '/opt/homebrew/Cellar/msodbcsql17/17.10.6.1/lib/libmsodbcsql.17.dylib'
-            sv = 'localhost'
-            db = 'MWP_CWF'
-            pw = os.environ['DATABASE_SA_PASSWORD']
-            conn = pyodbc.connect(
-                f'DRIVER={dv};SERVER={sv};Database={db};Uid=SA;Pwd={pw}',
-                autocommit=True
-            )
-        return conn
-    '''
 
     def readHeader(self,offset=0):
         return np.fromfile(self.fname,dtype=self.header_dt, offset=offset, count=1)
@@ -380,8 +359,9 @@ class GetFlow:
     # Get INTB2 flow data
 
     def __init__(self, run_dir, intb_version, is_river=True):
-        self.run_dir = run_dir.replace('/Volumes/Mac_xSSD','/mnt')
-        self.fname = os.path.join(run_dir,'PEST_Run','ReachHistory.csv')
+        self.run_dir = run_dir.replace('/Volumes/Mac_xSSD','/home')
+        self.fname = os.path.join(self.run_dir,'PEST_Run','ReachHistory.csv')
+        self.f_fmt = os.path.join(os.path.dirname(self.run_dir),'BCP_format','ReachHistory_format.xml')
         self.dbin = 'INTB2_Input'
         self.dbout = f'INTB{intb_version}_Output'
         conn = self.get_DBconn()
@@ -424,42 +404,101 @@ class GetFlow:
     def get_DBconn(self):
         return get_DBconn()
 
-    def getStreamflow_Table(self, stationIDs, intb_version
-            , SorceOrigin='Sim', need_weekly=False, date_index=True, por=None):
+    def totalCrystalSprings(self, conn, por=None):
+        fname = os.path.join(self.run_dir,'PEST_Run','RivercellHistory.csv')
+        f_fmt = os.path.join(os.path.dirname(self.run_dir),'BCP_format','RivercellHistory_format.xml')
+        # Channel Flows
+        df1 = pd.read_sql(f"""--sql
+            --- Channel Flows
+            SELECT RCH.Date,-Sum(Baseflow)/24/3600 ChannelBaseFlow
+            FROM MWP_CWF.dbo.CrystalSpringsPolygon P
+            INNER JOIN [INTB2_Input].[dbo].[WaterbodyFragmentToWaterbodyPolygonMap] PF ON P.PolygonID=PF.PolygonID
+            INNER JOIN [INTB2_Input].[dbo].[WaterbodyFragment] WF ON PF.WaterbodyFragmentID=WF.WaterbodyFragmentID
+            INNER JOIN [INTB2_Input].[dbo].[Rivercell] R ON PF.WaterbodyFragmentID=R.WaterbodyFragmentID
+            INNER JOIN OPENROWSET( BULK '{fname}', FORMATFILE='{f_fmt}'
+                , FIRSTROW = 2
+                , MAXERRORS = 1
+                ) RCH ON R.RivercellID=RCH.RivercellID
+            WHERE WF.IsChannel=1
+            GROUP BY Date
+            ORDER BY Date
+            """, conn)
+        df2 = pd.read_sql(f"""--sql
+            --- Reach Flow
+            SELECT Date,ROVOL*43560.0/86400.0 ReachFlow
+            FROM OPENROWSET( BULK '{self.fname}', FORMATFILE='{self.f_fmt}'
+                , FIRSTROW = 2
+                , MAXERRORS = 1
+            ) A
+            WHERE ReachID=83
+            ORDER BY Date
+            """, conn)
+        df3 = pd.read_sql(f"""--sql
+            --- Spring Vent
+            SELECT Date,ROVOL*43560.0/86400.0 SpringVent
+            FROM OPENROWSET( BULK '{self.fname}', FORMATFILE='{self.f_fmt}'
+                , FIRSTROW = 2
+                , MAXERRORS = 1
+            ) A
+            WHERE ReachID=291
+            ORDER BY Date
+            """, conn)
+        return df1,df2,df3
+
+    def getStreamflow_Table(self, stationIDs, SorceOrigin='Sim', need_weekly=False, date_index=True
+            , por=None):
         if type(stationIDs) is not list:
             stationIDs = [stationIDs]
+        if (SorceOrigin=='Sim') and (HILLS_R_BL_Crystal_ID in stationIDs):
+            need_crystal = True
+            ipos = stationIDs.index(HILLS_R_BL_Crystal_ID)
+            stationIDs[ipos] = 2 # get Hills R upper gate instead
+        else:
+            need_crystal = False
         stalist = str(stationIDs).replace('[','(').replace(']',')')
         idlist = str([f"ID_{i:02}" for i in stationIDs]).replace('[','').replace(']','').replace("'","")
 
-        if SorceOrigin=='Sim':
-            db_source = f'INTB{intb_version}_Output.dbo.StreamflowTS'
-            deleted = ''
-            # '''
-            #     SELECT a.Date, b.FlowStationId,
-            #         SUM((a.ROVOL*43560.0)/86400.0 * b.ScaleFactor) Value
-            #     FROM OPENROWSET(BULK '/home/MWP-IHM/INTB2_bp424/PEST_Run/ReachHistory.csv'
-            #         , FORMATFILE='/home/MWP-IHM/BCP_format/ReachHistory_format.xml', FIRSTROW=2) as a
-            #     INNER JOIN INTB2_Input.dbo.ReachFlowStation b ON b.ReachID = a.ReachID
-            #     GROUP BY a.Date, b.FlowStationId
-            # '''
-        else:
-            db_source = 'INTB2_Input.dbo.FlowStationTimeseries'
-            deleted = 'and Deleted=0'
-        
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
         else:
             weekstart = ''
 
         conn = self.get_DBconn()
-        df = pd.read_sql(f"""
-            select Date,{idlist}{weekstart} from (
-            select Date,'ID_'+right(left(cast(FlowStationID/100. as varchar),4),2) StaID,Value
-            from {db_source}
-            where FlowStationID in {stalist} {deleted}
-            ) A pivot (AVG(Value) for StaID in ({idlist})) B
-            order by Date
-        """,conn)
+        if SorceOrigin=='Sim':
+            df = pd.read_sql(f"""
+                SELECT Date,{idlist}{weekstart} from (
+                    SELECT a.Date, 'ID_'+right(left(cast(b.FlowStationID/100. as varchar),4),2) StaID
+                        , SUM((a.ROVOL*43560.0)/86400.0 * b.ScaleFactor) Value
+                    FROM OPENROWSET(BULK '{self.fname}', FORMATFILE='{self.f_fmt}', FIRSTROW=2) as a
+                    INNER JOIN {self.dbin}.dbo.ReachFlowStation b
+                        ON b.ReachID = a.ReachID and b.FlowStationID in {stalist}
+                    GROUP BY a.Date, b.FlowStationId
+                ) A pivot (AVG(Value) for StaID in ({idlist})) B
+                order by Date
+            """,conn)
+            if need_crystal:
+                df = df.rename(columns={df.columns[ipos+1]: f'ID_{HILLS_R_BL_Crystal_ID:02}'})
+                # Estimate Hills R. flow at lower gage near Crystal Springs flow from upper gage
+                # Add Spring vent, Channel and diffuse flows for Crystal Springs Crystal Springs
+                df1, df2, df3 = self.totalCrystalSprings(conn, por=None)
+                # if df['Date'].equals(tempDF['Date']):
+                colname = df.columns[ipos+1]
+                df[colname] += df1['ChannelBaseFlow'] + df2['ReachFlow'] + df3['SpringVent']
+                stationIDs[ipos] = HILLS_R_BL_Crystal_ID
+                # else:
+                #     print("\033[91mCan't add diffuse flow for Crystal Springs - Date columns not matched!\033[0m", file=sys.stderr)
+
+        else:
+            db_source = f'{self.dbin}.dbo.FlowStationTimeseries'
+            deleted = 'and Deleted=0'
+            df = pd.read_sql(f"""
+                select Date,{idlist}{weekstart} from (
+                select Date,'ID_'+right(left(cast(FlowStationID/100. as varchar),4),2) StaID,Value
+                from {db_source}
+                where FlowStationID in {stalist} {deleted}
+                ) A pivot (AVG(Value) for StaID in ({idlist})) B
+                order by Date
+            """,conn)
         conn.close()
 
         if need_weekly:
@@ -472,76 +511,86 @@ class GetFlow:
             df.set_index('Date', inplace=True)
         return df
     
-    def getStreamflow_Vector(self, stationIDs, SorceOrigin='Sim', need_weekly=False, date_index=True, por=None
-            , intb_version=2):
+    def getStreamflow_Vector(self, stationIDs, SorceOrigin='Sim', need_weekly=False, date_index=True
+            , por=None):
         if type(stationIDs) is not list:
             stationIDs = [stationIDs]
-        stalist = str(stationIDs).replace('[','(').replace(']',')')
+        idlist = [f"ID_{i:02}" for i in stationIDs]
 
-        if SorceOrigin=='Sim':
-            db_source = f'INTB{intb_version}_Output.dbo.StreamflowTS'
-            deleted = ''
-        else:
-            db_source = 'INTB2_Input.dbo.FlowStationTimeseries'
-            deleted = 'and Deleted=0'
+        # if need_weekly:
+        #     weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
+        # else:
+        #     weekstart = ''
 
-        if need_weekly:
-            weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
-        else:
-            weekstart = ''
+        df = self.getStreamflow_Table(stationIDs, SorceOrigin, need_weekly, date_index=False, por=por)
+        df = pd.melt(df,id_vars=['Date'],value_vars=idlist,var_name='StaID')
 
-        conn = self.get_DBconn()
-        df = pd.read_sql(f"""
-            select Date,'ID_'+right(left(cast(FlowStationID/100. as varchar),4),2) StaID,Value{weekstart}
-            from {db_source}
-            where FlowStationID in {stalist} {deleted}
-            order by FlowStationID,Date
-        """,conn)
-        conn.close()
+        # conn = self.get_DBconn()
+        # if SorceOrigin=='Sim':
+        #     df = pd.read_sql(f"""
+        #         SELECT a.Date, 'ID_'+right(left(cast(b.FlowStationID/100. as varchar),4),2) StaID
+        #             , SUM((a.ROVOL*43560.0)/86400.0 * b.ScaleFactor) Value{weekstart}
+        #         FROM OPENROWSET(BULK '{self.fname}', FORMATFILE='{self.f_fmt}', FIRSTROW=2) as a
+        #         INNER JOIN {self.dbin}.dbo.ReachFlowStation b
+        #             ON b.ReachID = a.ReachID and b.FlowStationID in {stalist}
+        #         GROUP BY a.Date, b.FlowStationId
+        #         order by FlowStationID,Date
+        #     """,conn)
+        # else:
+        #     db_source = f'{self.dbin}.dbo.FlowStationTimeseries'
+        #     deleted = 'and Deleted=0'
+        #     df = pd.read_sql(f"""
+        #         select Date,'ID_'+right(left(cast(FlowStationID/100. as varchar),4),2) StaID,Value{weekstart}
+        #         from {db_source}
+        #         where FlowStationID in {stalist} {deleted}
+        #         order by FlowStationID,Date
+        #     """,conn)
+        # conn.close()
 
-        if need_weekly:
-            df = df.groupby(['WeekStart','StaID'])['Value'].mean().reset_index()
-            df = df.rename(columns={'WeekStart': 'Date'})
-            df = df.reset_index(drop=True)  # Reindex the DataFrame with a new index
-            
+        # if need_weekly:
+        #     df = df.groupby(['WeekStart','StaID'])['Value'].mean().reset_index()
+        #     df = df.rename(columns={'WeekStart': 'Date'})
+        #     df = df.reset_index(drop=True)  # Reindex the DataFrame with a new index
+
         if date_index:
             df.set_index(['Date','StaID'], inplace=True)
         return df
 
-    def getSpringflow_Table(self, springIDs, intb_version
-            , SorceOrigin='Sim', need_weekly=False, date_index=True, por=None):
+    def getSpringflow_Table(self, springIDs, SorceOrigin='Sim', need_weekly=False, date_index=True
+            , por=None):
         if type(springIDs) is not list:
             springIDs = [springIDs]
         stalist = str(springIDs).replace('[','(').replace(']',')')
         idlist = str([f"ID_{i:02}" for i in springIDs]).replace('[','').replace(']','').replace("'","")
 
-        if SorceOrigin=='Sim':
-            db_source = f'INTB{intb_version}_Output.dbo.SpringflowTS'
-            deleted = ''
-            # '''
-            #     select CAST(a.Date as DATE) Date, b.SpringId SpringID, a.ROVOL*43560.0/86400.0 Value
-            #     FROM OPENROWSET(BULK '/home/MWP-IHM/INTB2_bp424/PEST_Run/ReachHistory.csv'
-            #         , FORMATFILE='/home/MWP-IHM/BCP_format/ReachHistory_format.xml', FIRSTROW=2) as a
-            #     INNER JOIN INTB2_Input.dbo.Spring b ON b.ReachID = a.ReachID
-            # '''
-        else:
-            db_source = 'INTB2_Input.dbo.ObservedSpringTimeSeries'
-            deleted = 'and Deleted=0'
-            
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
         else:
             weekstart = ''
 
         conn = self.get_DBconn()
-        df = pd.read_sql(f"""
-            select Date,{idlist}{weekstart} from (
-            select Date,'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID,Value
-            from {db_source}
-            where SpringID in {stalist} {deleted}
-            ) A pivot (AVG(Value) for SprID in ({idlist})) B
-            order by Date
-        """,conn)
+        if SorceOrigin=='Sim':
+            df = pd.read_sql(f"""
+                SELECT Date,{idlist}{weekstart} from (
+                    SELECT a.Date, 'ID_'+right(left(cast(b.SpringID/100. as varchar),4),2) SprID
+                        , (a.ROVOL*43560.0)/86400.0 Value
+                    FROM OPENROWSET(BULK '{self.fname}', FORMATFILE='{self.f_fmt}', FIRSTROW=2) as a
+                    INNER JOIN {self.dbin}.dbo.Spring b
+                        ON b.ReachID = a.ReachID and b.SpringID in {stalist}
+                ) A pivot (AVG(Value) for SprID in ({idlist})) B
+                order by Date
+            """,conn)
+        else:
+            db_source = 'INTB2_Input.dbo.ObservedSpringTimeSeries'
+            deleted = 'and Deleted=0'
+            df = pd.read_sql(f"""
+                select Date,{idlist}{weekstart} from (
+                select Date,'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID,Value
+                from {db_source}
+                where SpringID in {stalist} {deleted}
+                ) A pivot (AVG(Value) for SprID in ({idlist})) B
+                order by Date
+            """,conn)
         conn.close()
 
         if need_weekly:
@@ -554,18 +603,11 @@ class GetFlow:
             df.set_index('Date', inplace=True)
         return df
     
-    def getSpringflow_Vector(self, springIDs, intb_version
-            , SorceOrigin='Sim', need_weekly=False, date_index=True, por=None):
+    def getSpringflow_Vector(self, springIDs, SorceOrigin='Sim', need_weekly=False, date_index=True
+            , por=None):
         if type(springIDs) is not list:
             springIDs = [springIDs]
         stalist = str(springIDs).replace('[','(').replace(']',')')
-
-        if SorceOrigin=='Sim':
-            db_source = f'INTB{intb_version}_Output.dbo.SpringflowTS'
-            deleted = ''
-        else:
-            db_source = 'INTB2_Input.dbo.ObservedSpringTimeSeries'
-            deleted = 'and Deleted=0'
 
         if need_weekly:
             weekstart = ',TS.dbo.WeekStart1([Date]) WeekStart'
@@ -573,12 +615,24 @@ class GetFlow:
             weekstart = ''
 
         conn = self.get_DBconn()
-        df = pd.read_sql(f"""
-            select Date,'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID,Value{weekstart}
-            from {db_source}
-            where SpringID in {stalist} {deleted}
-            order by SpringID,Date
-        """,conn)
+        if SorceOrigin=='Sim':
+            df = pd.read_sql(f"""
+                SELECT Date, 'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID
+                    , (a.ROVOL*43560.0)/86400.0 Value{weekstart}
+                FROM OPENROWSET(BULK '{self.fname}', FORMATFILE='{self.f_fmt}', FIRSTROW=2) as a
+                INNER JOIN {self.dbin}.dbo.Spring b
+                    ON b.ReachID = a.ReachID and b.SpringID in {stalist}
+                order by SpringID,Date
+            """,conn)
+        else:
+            db_source = 'INTB2_Input.dbo.ObservedSpringTimeSeries'
+            deleted = 'and Deleted=0'
+            df = pd.read_sql(f"""
+                select Date,'ID_'+right(left(cast(SpringID/100. as varchar),4),2) SprID,Value{weekstart}
+                from {db_source}
+                where SpringID in {stalist} {deleted}
+                order by SpringID,Date
+            """,conn)
         conn.close()
 
         if need_weekly:
@@ -594,6 +648,11 @@ class GetFlow:
 if __name__ == '__main__':
     proj_dir = os.path.dirname(os.path.dirname((__file__)))
     run_dir = os.path.join(proj_dir,'INTB2_bp424')
+
+    gf = GetFlow(run_dir,2,is_river=True)
+    # gf.getStreamflow_Vector([HILLS_R_BL_Crystal_ID])
+    df1 = gf.getStreamflow_Vector([1,2],need_weekly=True)
+    df2 = gf.getStreamflow_Table([1,2],need_weekly=True,date_index=False)
 
     exit(0)
 

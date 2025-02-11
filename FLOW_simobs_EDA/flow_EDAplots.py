@@ -18,7 +18,11 @@ with open(CONFIG_FILE, 'r') as file:
         print(f"\033[91mError parsing YAML file: {e}\033[0m", file=sys.stderr)
         CONFIG = None
 
-IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
+if ('debugpy' in sys.modules and sys.modules['debugpy'].__file__.find('/.vscode/extensions/') > -1):
+    IS_DEBUGGING = True
+else:
+    IS_DEBUGGING = False
+# IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
 MAX_NUM_PROCESSES = CONFIG['general']['MAX_NUM_PROCESSES']
 INTB_VERSION = CONFIG['general']['INTB_VERSION']
 FILE_REGRESSION_PARAMS = CONFIG['general']['FILE_REGRESSION_PARAMS']
@@ -490,10 +494,10 @@ def plotResidue(df,loc_name):
 
 def get1WideTable(id,gf,need_weekly):
     # Wide format table
-    obs_ts = gf.getStreamflow_Table(id,INTB_VERSION,'Obs',need_weekly,date_index=True)
+    obs_ts = gf.getStreamflow_Table(id,'Obs',need_weekly,date_index=True)
     obs_ts[obs_ts[f'ID_{id:02}']<ZERO_FLOW] = ZERO_FLOW
     obs_ts.rename(columns={f'ID_{id:02}':f'obs_{id:02}'},inplace=True)
-    sim_ts = gf.getStreamflow_Table(id,INTB_VERSION,'Sim',need_weekly,date_index=True)
+    sim_ts = gf.getStreamflow_Table(id,'Sim',need_weekly,date_index=True)
     sim_ts[sim_ts[f'ID_{id:02}']<ZERO_FLOW] = ZERO_FLOW
     sim_ts.rename(columns={f'ID_{id:02}':f'sim_{id:02}'},inplace=True)
     df = sim_ts.join(obs_ts)
@@ -607,18 +611,17 @@ if __name__ == '__main__':
     if IS_DEBUGGING:
         # use_mp = use_noMP | useMP_Queue | useMP_Pool
         use_mp = 'use_noMP '
-        flowIDs = [i for i in flowIDs if i not in [18,21]]
-        # flowIDs = [
-        #     # 2,  # HILLS ABOVE CRYSTAL SPRINGS
-        #     # 6,  # HILLS R AT MORRIS BRIDGE
-        #     # 22, # ANCLOTE R NR ELFERS
-        #     # 24, # PITHLA R NR NEW PT RICHEY 
-        #     74]
-        
+        # flowIDs = [i for i in flowIDs if i not in [18,21]]
+        flowIDs = [
+            # 2,  # HILLS ABOVE CRYSTAL SPRINGS
+            # 6,  # HILLS R AT MORRIS BRIDGE
+            # 22, # ANCLOTE R NR ELFERS
+            # 24, # PITHLA R NR NEW PT RICHEY 
+            74]
     else:
         use_mp = 'useMP_Queue'
         if INTB_VERSION==2:
-            flowIDs = [i for i in flowIDs if i not in [18,21]]
+            flowIDs = sorted([i for i in flowIDs if i not in [18,21]], reverse=True)
         else:
             flowIDs = [i for i in flowIDs if i not in [18,21,74]]
         plotWarehouse = os.path.join(proj_dir,'plotWarehouse')

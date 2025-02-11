@@ -18,7 +18,11 @@ with open(CONFIG_FILE, 'r') as file:
         print(f"\033[91mError parsing YAML file: {e}\033[0m", file=sys.stderr)
         CONFIG = None
 
-IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
+if ('debugpy' in sys.modules and sys.modules['debugpy'].__file__.find('/.vscode/extensions/') > -1):
+    IS_DEBUGGING = True
+else:
+    IS_DEBUGGING = False
+# IS_DEBUGGING = CONFIG['general']['IS_DEBUGGING']
 MAX_NUM_PROCESSES = CONFIG['general']['MAX_NUM_PROCESSES']
 INTB_VERSION = CONFIG['general']['INTB_VERSION']
 FILE_REGRESSION_PARAMS = CONFIG['general']['FILE_REGRESSION_PARAMS']

@@ -1,5 +1,5 @@
 general:
-  IS_DEBUGGING: False
+  # IS_DEBUGGING: False
   MAX_NUM_PROCESSES: 10
   INTB_VERSION: 2
   ZERO_FLOW: 1.
