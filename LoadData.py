@@ -27,7 +27,7 @@ owinfo_sql = f'''
         SELECT PointName,TargetWL Target,'OROP_CP' TargetType
         FROM [MWP_CWF].[dbo].[RA_TargetWL]
         UNION
-        SELECT PointName,AvgMin Target,'Regulartory' TargetType
+        SELECT PointName,AvgMin Target,'Regulatory' TargetType
         FROM [MWP_CWF].[dbo].[RA_RegWellPermit]
         UNION
         SELECT PointName,MinAvg Target,'SWIMAL' TargetType
@@ -39,33 +39,65 @@ owinfo_sql = f'''
 '''
 HILLS_R_BL_Crystal_ID = 74
 
-def get_DBconn():
+def get_DBconn(use_alchemy=False, db='MWP_CWF'):
     import urllib
     warnings.simplefilter(action='ignore', category=UserWarning)
+    engine = None
     if is_Windows:
         dv = '{SQL Server}'
         sv = 'localhost'
-        db = 'MWP_CWF'
-        conn = pyodbc.connect(
-            f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes;timeout=60;"',autocommit=True)
-        # params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes")
-        # engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
-        # conn = engine.connect()
+        # db = 'MWP_CWF'
+        if use_alchemy:
+            params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes")
+            engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
+            conn = engine.connect()
+        else:
+            conn = pyodbc.connect(
+                f'DRIVER={dv};SERVER={sv};Database={db};Trusted_Connection=Yes;timeout=60;"',
+                autocommit=True)
     else:
         dv = '/opt/homebrew/Cellar/msodbcsql17/17.10.6.1/lib/libmsodbcsql.17.dylib'
         sv = 'localhost'
-        db = 'MWP_CWF'
+        # db = 'MWP_CWF'
         pw = os.environ['DATABASE_SA_PASSWORD']
-        conn = pyodbc.connect(
-            f'DRIVER={dv};SERVER={sv};Database={db};Uid=SA;Pwd={pw}',
-            autocommit=True
-        )
-        # params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};DATABASE={db};UID=SA;PWD={pw}")
-        # engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
-        # conn = engine.connect() 
-
+        if use_alchemy:
+            params = urllib.parse.quote_plus(f"DRIVER={dv};SERVER={sv};DATABASE={db};UID=SA;PWD={pw}")
+            engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
+            conn = engine.connect()
+        else:
+            conn = pyodbc.connect(
+                f'DRIVER={dv};SERVER={sv};Database={db};Uid=SA;Pwd={pw}',
+                autocommit=True
+            )
+ 
     conn.timeout = 1200
+    if use_alchemy:
+        conn = engine
     return conn
+
+
+class ScreenTextColor:
+    RESET    = '\033[0m'   # Reset all styles
+    BOLD     = '\033[1m'   # Bold
+    ULINE    = '\033[4m'   # Underline
+    INVERT   = '\033[7m'   # Invert
+    BK_FG    = '\033[30m'  # Black text
+    R_FG     = '\033[31m'  # Red text
+    G_FG     = '\033[32m'  # Green text
+    Y_FG     = '\033[33m'  # Yellow text
+    B_FG     = '\033[34m'  # Blue text
+    M_FG     = '\033[35m'  # Magenta text
+    C_FG     = '\033[36m'  # Cyan text
+    W_FG     = '\033[37m'  # White text
+    BK_BG    = '\033[40m'  # Black background
+    R_BG     = '\033[41m'  # Red background
+    G_BG     = '\033[42m'  # Green background
+    Y_BG     = '\033[43m'  # Yellow background
+    B_BG     = '\033[44m'  # Blue background
+    M_BG     = '\033[45m'  # Magenta background
+    C_BG     = '\033[46m'  # Cyan background
+    W_BG     = '\033[47m'  # White background
+
 
 class ReadHead:
     # Read head from MODFLOW binary data file
@@ -84,7 +116,11 @@ class ReadHead:
         ])
 
         self.run_dir = run_dir
-        self.fname = os.path.join(run_dir,'PEST_Run','IHM_Binary_Files','Head.IHM_COPY')
+        dir_path = os.path.join(self.run_dir,'PEST_Run')
+        if os.path.exists(dir_path) and os.path.isdir(dir_path):
+            self.fname = os.path.join(run_dir,'PEST_Run','IHM_Binary_Files','Head.IHM_COPY')
+        else:
+            self.fname = os.path.join(self.run_dir,'Head.IHM_COPY')
         x = np.fromfile(self.fname,dtype=self.header_dt,count=1)
         self.nwords = 4
         self.Nlays = x['Nlays'][0]
@@ -99,6 +135,14 @@ class ReadHead:
             ('header',self.header_dt),
             ('head',np.float32,self.nrows*self.ncols)
         ])
+
+        conn = self.get_DBconn()
+        self.Calendar = pd.read_sql('''
+            SELECT ROW_NUMBER() OVER(ORDER BY [Date] ASC) AS TimeStep,[Date],WeekStart
+            FROM INTB2_Input.dbo.INTBCalendar
+            ORDER BY [Date]
+        ''', conn)
+        conn.close()
 
     def get_DBconn(self):
         return get_DBconn()
@@ -172,12 +216,13 @@ class ReadHead:
         x,t,l = self.readHeadMultiTsteps(tsteps,layers)
         return x[:, cellindex],t,l
     
-    def getHeadByWellnames(self,wnames,por=None,date_index=True,need_weekly=False):
+    def getHeadByWellnames(self, wnames, por=None, date_index=True, need_weekly=False):
         # This function get INTB2 simulated heads for a specified list of OROP wells
         if type(wnames) is not list:
             print(f"Expecting 'wnames' to be a list!")
             wnames = [wnames]
-        
+        if por==None:
+            por = ['1989-01-01', '2006-12-31']
         # Get known list of OROP wells (SAS & UFAS) with CellID and Layer Number from database
         conn = self.get_DBconn()
         df = pd.read_sql(f'''
@@ -194,11 +239,15 @@ class ReadHead:
 			LEFT JOIN RA_TargetWL B ON A.PointName=B.PointName
         ''',conn)
 
-        # update layer number fron owinfo
+        # update layer number from owinfo
         owinfo = pd.read_sql(owinfo_sql,conn)
         owinfo.loc[owinfo.PointName=='WRW-s','LayerNumber'] = 3
+        owinfo.loc[owinfo.PointName=='CWD-Elem-SAS','LayerNumber'] = 1
+        owinfo.loc[owinfo.PointName=='CWD-Elem-SAS','SurfEl2CellTopoOffset'] = 1.01
+
         for i in owinfo.PointName:
             df.loc[df.PointName==i,'Layer'] = np.int8(owinfo.LayerNumber[owinfo.PointName==i])[0]
+        self.owinfo = owinfo
 
         df0 = df[['PointName','Target']]
         self.Target = dict(zip(df0['PointName'], df['Target']))
@@ -209,6 +258,7 @@ class ReadHead:
                 ,CONVERT(varchar, [Date], 23) [Date]
                 ,CONVERT(varchar, WeekStart, 23) WeekStart
             FROM [INTB2_Input].[dbo].[INTBCalendar]
+            WHERE Date BETWEEN '{por[0]}' and '{por[1]}'
             ORDER BY Date
         ''',conn)
         conn.close()
@@ -220,10 +270,10 @@ class ReadHead:
 
         # Matching por to range of timesteps
         if por!=None:
-            sdate = datetime.strptime(por[0],'%m/%d/%Y').date()
-            edate = datetime.strptime(por[1],'%m/%d/%Y').date()
-            s_stp = [i for i,j in enumerate(self.Calendar['Date']) if j==sdate][0]+1
-            e_stp = [i for i,j in enumerate(self.Calendar['Date']) if j==edate][0]+1
+            # sdate = datetime.strptime(por[0],'%Y-%m-%d').date()
+            # edate = datetime.strptime(por[1],'%Y-%m-%d').date()
+            s_stp = [i for i,j in enumerate(self.Calendar['Date']) if j==por[0]][0]+1
+            e_stp = [i for i,j in enumerate(self.Calendar['Date']) if j==por[1]][0]+1
             tsteps = range(s_stp,e_stp+1)
 
             # Read head from MODFLOW binary head file and extract TS by layers of the wells
@@ -252,11 +302,15 @@ class ReadHead:
         return tempDF
 
     def computeWeeklyAvg(self,dailyData):
-        tempDF = self.Calendar.set_index('Date')
-        dailyData['WeekStart'] = [tempDF.loc[d.strftime('%Y-%m-%d')].WeekStart for d in dailyData.index]
-        tempDF = dailyData.groupby('WeekStart').mean()
-        tempDF.index = pd.to_datetime(tempDF.index)
-        return tempDF
+        # tempDF = self.Calendar.set_index('Date')
+        # dailyData['WeekStart'] = [tempDF.loc[d.strftime('%Y-%m-%d')].WeekStart for d in dailyData.index]
+        # tempDF = dailyData.groupby('WeekStart').mean()
+        # tempDF.index = pd.to_datetime(tempDF.index)
+
+        df = pd.merge(dailyData, self.Calendar[['Date','WeekStart']], on='Date', how='inner')
+        df = df.iloc[:,range(1,len(df.columns))].groupby('WeekStart').mean()
+        df = df.reset_index().rename(columns={'WeekStart':'Date'})
+        return df
     
     def plotData(self,df):
         pointname = df.columns.to_list()[0]
@@ -359,9 +413,18 @@ class GetFlow:
     # Get INTB2 flow data
 
     def __init__(self, run_dir, intb_version, is_river=True):
-        self.run_dir = run_dir.replace('/Volumes/Mac_xSSD','/home')
-        self.fname = os.path.join(self.run_dir,'PEST_Run','ReachHistory.csv')
-        self.f_fmt = os.path.join(os.path.dirname(self.run_dir),'BCP_format','ReachHistory_format.xml')
+        if is_Windows:
+            self.run_dir = run_dir
+        else:
+            self.run_dir = run_dir.replace('/Volumes/Mac_xSSD','/home')
+        dir_path = os.path.join(self.run_dir,'PEST_Run')
+        if os.path.exists(dir_path) and os.path.isdir(dir_path):
+            self.fname = os.path.join(dir_path,'ReachHistory.csv')
+            self.f_fmt = os.path.join(os.path.dirname(self.run_dir),'BCP_format','ReachHistory_format.xml')
+        else:
+            self.fname = os.path.join(self.run_dir,'ReachHistory.csv')
+            self.f_fmt = os.path.join(os.path.dirname(os.path.dirname(self.run_dir)),
+                'BCP_format','ReachHistory_format.xml')
         self.dbin = 'INTB2_Input'
         self.dbout = f'INTB{intb_version}_Output'
         conn = self.get_DBconn()
@@ -405,8 +468,8 @@ class GetFlow:
         return get_DBconn()
 
     def totalCrystalSprings(self, conn, por=None):
-        fname = os.path.join(self.run_dir,'PEST_Run','RivercellHistory.csv')
-        f_fmt = os.path.join(os.path.dirname(self.run_dir),'BCP_format','RivercellHistory_format.xml')
+        fname = os.path.join(self.run_dir,'RivercellHistory.csv')
+        f_fmt = os.path.join(os.path.dirname(self.f_fmt),'RivercellHistory_format.xml')
         # Channel Flows
         df1 = pd.read_sql(f"""--sql
             --- Channel Flows
